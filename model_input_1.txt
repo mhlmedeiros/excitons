@@ -1,0 +1,13 @@
+# Input model file
+
+# Model function:
+hamiltonian_2x2
+
+# Parameters:
+1       # Number of conduction bands
+1       # Number of valence bands
+zero    # Alpha option
+2.6     # Egap [eV]
+2.4     # Gamma [eV*AA]
+0       # m_c (if Alpha option is "zero" this value will be ignored)
+0       # m_v (if Alpha option is "zero" this value will be ignored)

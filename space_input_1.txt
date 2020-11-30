@@ -1,0 +1,16 @@
+# Input file for k-space and potential specification
+
+# Potential function:
+rytova_keldysh_pontual
+
+# Parameters Potential:
+1       # effective epsilon
+4.51    # r_0 in nm (WSe2)
+
+# Space parameters:
+5       # minimum size nm^-1
+5       # maximum size nm^-1
+1       # step for sizes
+11      # minimum number of discrete points
+101     # maximum number of discrete points
+10      # step for discretization 
