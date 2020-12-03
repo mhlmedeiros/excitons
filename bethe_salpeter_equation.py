@@ -175,8 +175,7 @@ def delta_k1k2(k1_ind, k2_ind, Vectors, Values):
 
     return Delta_k1_k2.reshape(cond_n*vale_n, cond_n*vale_n)
 
-def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, **params):
-
+def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh, average=False, **params):
     # First we need some information about the shape of "Values"
     kx_len, ky_len, num_states = Values.shape
     cond_v, vale_v = split_values(Values[0,0,:]) # Just to set the size of the holder matrix
@@ -200,24 +199,38 @@ def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, **params):
             delta = delta_k1k2(k1, k2, Vectors, Values)
             k1_vec = np.array([Kx_flat[k1], Ky_flat[k1]])
             k2_vec = np.array([Kx_flat[k2], Ky_flat[k2]])
-            q = calculate_distance_k_pontual(k1_vec, k2_vec)
-            Dk1k2 = delta * rytova_keldysh_pontual(q, dk2, **params)
+            if not average:
+                q = calculate_distance_k_pontual(k1_vec, k2_vec)
+                Dk1k2 = delta * rytova_keldysh_pontual(q, dk2, **params)
+            else:
+                k_diff = k1_vec - k2_vec
+                Dk1k2 = delta * rytova_keldysh_average(k_diff, dk2, N=N_submesh, **params)
+
             # if k1 == 0 and k2 == indice_k2_test_1 : print("Delta_k1_k2: ", delta)
             # elif k1 == 0 and k2 == indice_k2_test_2 : print("Delta_k1_k2: ",delta)
             W_ND[k1*S:(k1+1)*S, k2*S:(k2+1)*S] = Dk1k2
             W_ND[k2*S:(k2+1)*S, k1*S:(k1+1)*S] = Dk1k2.T.conj()
-
     return W_ND
 
-def rytova_keldysh_average(kx, ky, dwx, dwy, N):
-    w_x_array = np.linspace(-dwx, dwx, N+2)[1:-1]
-    w_y_array = np.linspace(-dwy, dwy, N+2)[1:-1]
+
+
+def rytova_keldysh_average(k_vec_diff, dk2, N=101, **params):
+    """
+    As we've been using a square lattice, we can use
+        * w_x_array == w_y_array -> w_array
+        * with limits:  -dw/2, +dw/2
+        * where: dw = sqrt(dk2)
+    """
+    dw = np.sqrt(dk2)
+    w_array = np.linspace(-dw/2, dw/2, N)
+    kx, ky = k_vec_diff
+
     Potential_value = 0
-    for wx in w_x_array:
-        for wy in w_y_array:
-            q = np.sqrt((kx+wx)**2 + (ky+wy)**2)
-            Potential_value += V(q)
-    return Potential_value/(len(w_x_array)*len(w_y_array))
+    for wx in w_array:
+        for wy in w_array:
+            q = np.sqrt((kx + wx)**2 + (ky + wy)**2)
+            Potential_value += rytova_keldysh_pontual(q, dk2, **params)
+    return Potential_value/(len(w_array)**2)
 
 
 
@@ -232,7 +245,6 @@ def plot_wave_function(eigvecs_holder, state_preview):
 
 
 def main():
-
     # ============================================================================= #
     ##                              Outuput options:
     # ============================================================================= #
@@ -315,6 +327,7 @@ def main():
     # ============================================================================ #
     ## Choose the number of discrete points to investigate the convergence:
     # ============================================================================ #
+    N_submesh = 11
     min_points = 15
     max_points = 15
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
@@ -342,7 +355,8 @@ def main():
 
             # The Bethe-Salpeter Equation:
             W_diag = diagonal_elements(Values3D)
-            W_non_diag = out_of_diagonal(Vectors4D, Values3D, Kx, Ky, dk2, **potential_params)
+            W_non_diag = out_of_diagonal(Vectors4D, Values3D, Kx, Ky,
+                                        dk2, N_submesh, average=True, **potential_params)
             W_total = W_diag + W_non_diag
             # Solutions of the BSE:
             values, vectors = LA.eigh(W_total)
