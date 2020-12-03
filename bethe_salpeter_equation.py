@@ -104,12 +104,11 @@ def calculate_distance_k_pontual(k1_vec, k2_vec):
     dist = np.sqrt(k_rel_vec @ k_rel_vec)
     return dist
 
-def rytova_keldysh_pontual(k1_vec, k2_vec, dk2, epsilon=2, r_0=4.51):
+def rytova_keldysh_pontual(q, dk2, epsilon=2, r_0=4.51):
     """
     The "pontual" version of the that one in Wannier script. Instead of return the whole matrix
     this function returns only the value asked.
     """
-    q = calculate_distance_k_pontual(k1_vec, k2_vec)
     Vkk_const = 1e6/(2*EPSILON_0)
     V =  1/(epsilon*q + r_0*q**2)
     return - Vkk_const * dk2/(2*np.pi)**2 * V
@@ -201,13 +200,26 @@ def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, **params):
             delta = delta_k1k2(k1, k2, Vectors, Values)
             k1_vec = np.array([Kx_flat[k1], Ky_flat[k1]])
             k2_vec = np.array([Kx_flat[k2], Ky_flat[k2]])
-            Dk1k2 = delta * rytova_keldysh_pontual(k1_vec, k2_vec, dk2, **params)
+            q = calculate_distance_k_pontual(k1_vec, k2_vec)
+            Dk1k2 = delta * rytova_keldysh_pontual(q, dk2, **params)
             # if k1 == 0 and k2 == indice_k2_test_1 : print("Delta_k1_k2: ", delta)
             # elif k1 == 0 and k2 == indice_k2_test_2 : print("Delta_k1_k2: ",delta)
             W_ND[k1*S:(k1+1)*S, k2*S:(k2+1)*S] = Dk1k2
             W_ND[k2*S:(k2+1)*S, k1*S:(k1+1)*S] = Dk1k2.T.conj()
 
     return W_ND
+
+def rytova_keldysh_average(kx, ky, dwx, dwy, N):
+    w_x_array = np.linspace(-dwx, dwx, N+2)[1:-1]
+    w_y_array = np.linspace(-dwy, dwy, N+2)[1:-1]
+    Potential_value = 0
+    for wx in w_x_array:
+        for wy in w_y_array:
+            q = np.sqrt((kx+wx)**2 + (ky+wy)**2)
+            Potential_value += V(q)
+    return Potential_value/(len(w_x_array)*len(w_y_array))
+
+
 
 def plot_wave_function(eigvecs_holder, state_preview):
     N = int(np.sqrt(eigvecs_holder.shape[0]))
