@@ -94,21 +94,22 @@ def diagonal_elements(Values):
     W_diag_matrix = np.diagflat(W_diagonal)
     return W_diag_matrix
 
-def calculate_distance_k_pontual(k1_ind, k2_ind, kx_flat, ky_flat):
+def calculate_distance_k_pontual(k1_vec, k2_vec):
     """
     Like the version used in the Wannier this function calculates the "distance" between two points
     in the reciprocal space. The difference is that here it just returns one value instead of
     the whole matrix with all possible pairs' distances.
     """
-    dist = np.sqrt((kx_flat[k1_ind]-kx_flat[k2_ind])**2 + (ky_flat[k1_ind]-ky_flat[k2_ind])**2)
+    k_rel_vec = k1_vec-k2_vec
+    dist = np.sqrt(k_rel_vec @ k_rel_vec)
     return dist
 
-def rytova_keldysh_pontual(k1_ind, k2_ind, kx_flat, ky_flat, dk2, epsilon=2, r_0=4.51):
+def rytova_keldysh_pontual(k1_vec, k2_vec, dk2, epsilon=2, r_0=4.51):
     """
     The "pontual" version of the that one in Wannier script. Instead of return the whole matrix
     this function returns only the value asked.
     """
-    q = calculate_distance_k_pontual(k1_ind, k2_ind, kx_flat, ky_flat)
+    q = calculate_distance_k_pontual(k1_vec, k2_vec)
     Vkk_const = 1e6/(2*EPSILON_0)
     V =  1/(epsilon*q + r_0*q**2)
     return - Vkk_const * dk2/(2*np.pi)**2 * V
@@ -198,7 +199,9 @@ def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, **params):
         for k2 in range(k1+1, Z):
             # Signal included in "rytova_keldysh_pontual":
             delta = delta_k1k2(k1, k2, Vectors, Values)
-            Dk1k2 = delta * rytova_keldysh_pontual(k1,k2,Kx_flat,Ky_flat,dk2,**params)
+            k1_vec = np.array([Kx_flat[k1], Ky_flat[k1]])
+            k2_vec = np.array([Kx_flat[k2], Ky_flat[k2]])
+            Dk1k2 = delta * rytova_keldysh_pontual(k1_vec, k2_vec, dk2, **params)
             # if k1 == 0 and k2 == indice_k2_test_1 : print("Delta_k1_k2: ", delta)
             # elif k1 == 0 and k2 == indice_k2_test_2 : print("Delta_k1_k2: ",delta)
             W_ND[k1*S:(k1+1)*S, k2*S:(k2+1)*S] = Dk1k2
@@ -300,8 +303,8 @@ def main():
     # ============================================================================ #
     ## Choose the number of discrete points to investigate the convergence:
     # ============================================================================ #
-    min_points = 107
-    max_points = 111
+    min_points = 15
+    max_points = 15
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
 
