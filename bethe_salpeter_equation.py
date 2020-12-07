@@ -175,7 +175,62 @@ def delta_k1k2(k1_ind, k2_ind, Vectors, Values):
 
     return Delta_k1_k2.reshape(cond_n*vale_n, cond_n*vale_n)
 
-def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh, average=False, **params):
+
+# ============================================================================= #
+##                              Rytova-Keldysh average:
+# ============================================================================= #
+def rytova_keldysh_average(k_vec_diff, dk2, N_submesh, **params):
+    """
+    As we've been using a square lattice, we can use
+    * w_x_array == w_y_array -> w_array
+    * with limits:  -dw/2, +dw/2
+    * where: dw = sqrt(dk2)
+    """
+    if N_submesh==None:
+        q = LA.norm(k_vec_diff)
+        Potential_value = rytova_keldysh_pontual(q, dk2, **params)
+    else:
+        dw = np.sqrt(dk2)
+        w_array = np.linspace(-dw/2, dw/2, N_submesh)
+        Potential_value = 0
+        for wx, wy in it.product(w_array, w_array):
+            w_vec = np.array([wx,wy])
+            q = LA.norm(k_vec_diff + w_vec)
+            Potential_value += rytova_keldysh_pontual(q, dk2, **params)
+        Potential_value = Potential_value/(N_submesh**2)
+    return Potential_value
+
+
+def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, **params):
+    """
+    CONSIDERING A SQUARE K-SPACE GRID
+    """
+    n_all_k_space = len(kx_flat)
+    n_first_row_k = int(np.sqrt(n_all_k_space)) # number of points in the first row of the grid
+    M_first_rows = np.zeros((n_first_row_k, n_all_k_space))
+    M_complete = np.zeros((n_all_k_space, n_all_k_space))
+
+    for k1_ind in range(n_first_row_k):
+        for k2_ind in range(k1_ind+1, n_all_k_space):
+            k1_vec = np.array((kx_flat[k1_ind], ky_flat[k1_ind]))
+            k2_vec = np.array((kx_flat[k2_ind], ky_flat[k2_ind]))
+            k_diff = k1_vec - k2_vec
+            # print(LA.norm(k_diff))
+            M_first_rows[k1_ind, k2_ind] = rytova_keldysh_average(k_diff, dk2, N_submesh, **params)
+
+    # plt.imshow(M_first_rows)
+
+    M_complete[:n_first_row_k,:] = M_first_rows
+    for row in range(1, n_first_row_k):
+        ni, nf = row * n_first_row_k, (row+1) * n_first_row_k
+        mi, mf = ni, -ni
+        M_complete[ni:nf, mi:] = M_first_rows[:, :mf]
+
+    M_complete += M_complete.T
+    return M_complete
+
+
+def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh=None, **params):
     # First we need some information about the shape of "Values"
     kx_len, ky_len, num_states = Values.shape
     cond_v, vale_v = split_values(Values[0,0,:]) # Just to set the size of the holder matrix
@@ -190,6 +245,13 @@ def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh, avera
     W_ND = np.zeros((S*Z,S*Z), dtype=complex)
     # Just for test purpose:
     # indice_k2_test_1, indice_k2_test_2 = np.random.randint(1,Z,2)
+
+    #==================#
+    #  Rytova-Keldysh  #
+    #==================#
+    V_RK = smart_rytova_keldysh_matrix(Kx_flat, Ky_flat, dk2, N_submesh, **params)
+    # print(V_RK)
+
     #==============#
     #  main loop:  #
     #==============#
@@ -197,15 +259,10 @@ def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh, avera
         for k2 in range(k1+1, Z):
             # Signal included in "rytova_keldysh_pontual":
             delta = delta_k1k2(k1, k2, Vectors, Values)
-            k1_vec = np.array([Kx_flat[k1], Ky_flat[k1]])
-            k2_vec = np.array([Kx_flat[k2], Ky_flat[k2]])
-            if not average:
-                q = calculate_distance_k_pontual(k1_vec, k2_vec)
-                Dk1k2 = delta * rytova_keldysh_pontual(q, dk2, **params)
-            else:
-                k_diff = k1_vec - k2_vec
-                Dk1k2 = delta * rytova_keldysh_average(k_diff, dk2, N=N_submesh, **params)
-
+            # k1_vec = np.array([Kx_flat[k1], Ky_flat[k1]])
+            # k2_vec = np.array([Kx_flat[k2], Ky_flat[k2]])
+            # k_diff = k1_vec - k2_vec
+            Dk1k2 = delta * V_RK[k1,k2]
             # if k1 == 0 and k2 == indice_k2_test_1 : print("Delta_k1_k2: ", delta)
             # elif k1 == 0 and k2 == indice_k2_test_2 : print("Delta_k1_k2: ",delta)
             W_ND[k1*S:(k1+1)*S, k2*S:(k2+1)*S] = Dk1k2
@@ -214,26 +271,9 @@ def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh, avera
 
 
 
-def rytova_keldysh_average(k_vec_diff, dk2, N=101, **params):
-    """
-    As we've been using a square lattice, we can use
-        * w_x_array == w_y_array -> w_array
-        * with limits:  -dw/2, +dw/2
-        * where: dw = sqrt(dk2)
-    """
-    dw = np.sqrt(dk2)
-    w_array = np.linspace(-dw/2, dw/2, N)
-    kx, ky = k_vec_diff
-
-    Potential_value = 0
-    for wx in w_array:
-        for wy in w_array:
-            q = np.sqrt((kx + wx)**2 + (ky + wy)**2)
-            Potential_value += rytova_keldysh_pontual(q, dk2, **params)
-    return Potential_value/(len(w_array)**2)
-
-
-
+# ============================================================================= #
+##                              Visualization:
+# ============================================================================= #
 def plot_wave_function(eigvecs_holder, state_preview):
     N = int(np.sqrt(eigvecs_holder.shape[0]))
     wave_funct = np.reshape(eigvecs_holder[:, state_preview, 0],(N,N))
@@ -327,9 +367,9 @@ def main():
     # ============================================================================ #
     ## Choose the number of discrete points to investigate the convergence:
     # ============================================================================ #
-    N_submesh = 11
-    min_points = 15
-    max_points = 15
+    min_points = 5
+    max_points = 5
+    N_submesh = None
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
 
@@ -354,11 +394,13 @@ def main():
             Values3D, Vectors4D = values_and_vectors(hamiltonian, Kx, Ky, **hamiltonian_params)
 
             # The Bethe-Salpeter Equation:
+            print("Building the BSE matrix...")
             W_diag = diagonal_elements(Values3D)
             W_non_diag = out_of_diagonal(Vectors4D, Values3D, Kx, Ky,
-                                        dk2, N_submesh, average=True, **potential_params)
+                                        dk2, N_submesh, **potential_params)
             W_total = W_diag + W_non_diag
             # Solutions of the BSE:
+            print("Diagonalizing the BSE matrix...")
             values, vectors = LA.eigh(W_total)
 
             # SAVE THE FIRST STATES ("number_of_recorded_states"):
@@ -411,4 +453,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    import timeit
+    setup = "from __main__ import main"
+    Ntimes = 1
+    print(timeit.timeit("main()", setup=setup, number=Ntimes))
+    # main()
