@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
 import sys
+import time
 import numpy as np
 import scipy.linalg as LA
 import sympy
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import itertools as it
+from numba import njit
 
 import wannier_coulomb_numba as wannier
 
@@ -15,6 +17,17 @@ HBAR = 1.23984193/(2*np.pi)         # eV 1e-6 m/c
 M_0  = 0.51099895000                # MeV/c^2
 hbar2_over2m = HBAR**2/(2*M_0)*1e3  # meV nm^2
 
+def st_time(func):
+    """
+    st decorator to calculate the total time of a func
+    """
+    def st_func(*args, **keyArgs):
+        t1 = time.time()
+        r = func(*args, **keyArgs)
+        t2 = time.time()
+        print("Function=%s, Time=%s" % (func.__name__, t2 - t1))
+        return r
+    return st_func
 
 def hamiltonian(kx, ky, E_gap=0.5, Gamma=1, Alpha_c=1, Alpha_v=-1):
     """
@@ -104,7 +117,8 @@ def calculate_distance_k_pontual(k1_vec, k2_vec):
     dist = np.sqrt(k_rel_vec @ k_rel_vec)
     return dist
 
-def rytova_keldysh_pontual(q, dk2, epsilon=2, r_0=4.51):
+@njit
+def rytova_keldysh_pontual(q, dk2, epsilon, r_0):
     """
     The "pontual" version of the that one in Wannier script. Instead of return the whole matrix
     this function returns only the value asked.
@@ -179,7 +193,8 @@ def delta_k1k2(k1_ind, k2_ind, Vectors, Values):
 # ============================================================================= #
 ##                              Rytova-Keldysh average:
 # ============================================================================= #
-def rytova_keldysh_average(k_vec_diff, dk2, N_submesh, **params):
+@njit
+def rytova_keldysh_average(k_vec_diff, dk2, N_submesh, epsilon, r_0):
     """
     As we've been using a square lattice, we can use
     * w_x_array == w_y_array -> w_array
@@ -187,21 +202,23 @@ def rytova_keldysh_average(k_vec_diff, dk2, N_submesh, **params):
     * where: dw = sqrt(dk2)
     """
     if N_submesh==None:
-        q = LA.norm(k_vec_diff)
-        Potential_value = rytova_keldysh_pontual(q, dk2, **params)
+        q = k_vec_diff[0]**2 + k_vec_diff[1]**2
+        Potential_value = rytova_keldysh_pontual(q, dk2, epsilon, r_0)
     else:
         dw = np.sqrt(dk2)
         w_array = np.linspace(-dw/2, dw/2, N_submesh)
         Potential_value = 0
-        for wx, wy in it.product(w_array, w_array):
-            w_vec = np.array([wx,wy])
-            q = LA.norm(k_vec_diff + w_vec)
-            Potential_value += rytova_keldysh_pontual(q, dk2, **params)
+        for wx in w_array:
+            for wy in w_array:
+                w_vec = np.array([wx, wy])
+                q_vec = k_vec_diff + w_vec
+                q = q_vec[0]**2 + q_vec[1]**2
+                Potential_value += rytova_keldysh_pontual(q, dk2, epsilon, r_0)
         Potential_value = Potential_value/(N_submesh**2)
     return Potential_value
 
-
-def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, **params):
+@njit
+def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0):
     """
     CONSIDERING A SQUARE K-SPACE GRID
     """
@@ -209,17 +226,15 @@ def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, **params):
     n_first_row_k = int(np.sqrt(n_all_k_space)) # number of points in the first row of the grid
     M_first_rows = np.zeros((n_first_row_k, n_all_k_space))
     M_complete = np.zeros((n_all_k_space, n_all_k_space))
-
+    print("\t\tCalculating the first rows (it may take a long time)...")
     for k1_ind in range(n_first_row_k):
         for k2_ind in range(k1_ind+1, n_all_k_space):
             k1_vec = np.array((kx_flat[k1_ind], ky_flat[k1_ind]))
             k2_vec = np.array((kx_flat[k2_ind], ky_flat[k2_ind]))
             k_diff = k1_vec - k2_vec
-            # print(LA.norm(k_diff))
-            M_first_rows[k1_ind, k2_ind] = rytova_keldysh_average(k_diff, dk2, N_submesh, **params)
+            M_first_rows[k1_ind, k2_ind] = rytova_keldysh_average(k_diff, dk2, N_submesh, epsilon, r_0)
 
-    # plt.imshow(M_first_rows)
-
+    print("\t\tOrganizing the the calculated values...")
     M_complete[:n_first_row_k,:] = M_first_rows
     for row in range(1, n_first_row_k):
         ni, nf = row * n_first_row_k, (row+1) * n_first_row_k
@@ -227,10 +242,12 @@ def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, **params):
         M_complete[ni:nf, mi:] = M_first_rows[:, :mf]
 
     M_complete += M_complete.T
+    # plt.imshow(M_complete)
     return M_complete
 
 
-def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh=None, **params):
+def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh,
+                    epsilon, r_0):
     # First we need some information about the shape of "Values"
     kx_len, ky_len, num_states = Values.shape
     cond_v, vale_v = split_values(Values[0,0,:]) # Just to set the size of the holder matrix
@@ -249,12 +266,14 @@ def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh=None, 
     #==================#
     #  Rytova-Keldysh  #
     #==================#
-    V_RK = smart_rytova_keldysh_matrix(Kx_flat, Ky_flat, dk2, N_submesh, **params)
+    print("\tCalculating the Rytova-Keldysh potential...")
+    V_RK = smart_rytova_keldysh_matrix(Kx_flat, Ky_flat, dk2, N_submesh, epsilon, r_0)
     # print(V_RK)
 
     #==============#
     #  main loop:  #
     #==============#
+    print("\tInserting the mixing terms Delta(kcv,k'c'v')...")
     for k1 in range(Z-1):
         for k2 in range(k1+1, Z):
             # Signal included in "rytova_keldysh_pontual":
@@ -270,7 +289,6 @@ def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh=None, 
     return W_ND
 
 
-
 # ============================================================================= #
 ##                              Visualization:
 # ============================================================================= #
@@ -283,14 +301,13 @@ def plot_wave_function(eigvecs_holder, state_preview):
     plt.show()
 
 
-
+@st_time
 def main():
     # ============================================================================= #
     ##                              Outuput options:
     # ============================================================================= #
     save = True
     preview = True
-
 
     # ============================================================================= #
     ##                      Hamiltonian and Potential parameters:
@@ -303,17 +320,20 @@ def main():
     epsilon_eff = 4.5
 
     alpha_options = ['zero', 'masses', 'corrected']
-    alpha_choice = int((input('''Enter the 'alphas-choice'(0/1/2):
-            option (0) : alphas == 0 (default)
-            option (1) : alphas == 1/m_j (WSe2 masses)
-            option (2) : alphas == 'corrected'
-            your option = ''')) or "0")
+    # alpha_choice = int((input('''Enter the 'alphas-choice'(0/1/2):
+    #         option (0) : alphas == 0 (default)
+    #         option (1) : alphas == 1/m_j (WSe2 masses)
+    #         option (2) : alphas == 'corrected'
+    #         your option = ''')) or "0")
+    alpha_choice = 0
 
     if alpha_choice in (0,1,2):
         alpha_option = alpha_options[alpha_choice]
     else:
         alpha_option = alpha_options[0]
+
     print("Option adopted: %s" % alpha_option)
+
     if alpha_choice == 1:
         alphac, alphav = 1/mc, 1/mv
     elif alpha_choice == 2:
@@ -321,8 +341,6 @@ def main():
         alphav = 1/mv - 1/hbar2_over2m * (gamma**2/Egap)
     else:
         alphac, alphav = 0, 0
-
-
 
     ## TERMINAL OPTIONS:
     while len(sys.argv) > 1:
@@ -350,9 +368,14 @@ def main():
         # due to the current strategy using "split_values" function,
         # this artificial gap prevent this problem.
         Egap = 1e-5
+
+    # HAMILTONIAN PARAMS
     hamiltonian_params = dict(E_gap=Egap, Alpha_c=alphac,
                              Alpha_v=alphav, Gamma=gamma)
-    potential_params = dict(epsilon=epsilon_eff, r_0=r0_chosen)
+
+    # POTENTIAL PARAMS
+    epsilon = epsilon_eff
+    r_0 = r0_chosen
 
 
     # ============================================================================ #
@@ -367,16 +390,16 @@ def main():
     # ============================================================================ #
     ## Choose the number of discrete points to investigate the convergence:
     # ============================================================================ #
-    min_points = 5
-    max_points = 5
-    N_submesh = None
+    min_points = 15
+    max_points = 15
+    N_submesh = 15
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
 
     # ============================================================================ #
     ##              Matrices to hold the eigenvalues and the eigenvectors:
     # ============================================================================ #
-    number_of_recorded_states = 15
+    number_of_recorded_states = 100
     eigvals_holder = np.zeros((number_of_recorded_states, len(n_points), len(L_values)))
     eigvecs_holder = np.zeros((max_points**2, number_of_recorded_states, len(L_values)),dtype=complex)
 
@@ -387,7 +410,7 @@ def main():
     for ind_L in range(len(L_values)):
         print("\nCalculating the system with {} nm^(-1).".format(L_values[ind_L]))
         for ind_Nk in range(len(n_points)):
-            print("Discretization: {}".format(n_points[ind_Nk]))
+            print("Discretization: {}x{} ".format(n_points[ind_Nk], n_points[ind_Nk]))
             # First we have to define the grid:
             Kx, Ky, dk2 = wannier.define_grid_k(L_values[ind_L], n_points[ind_Nk])
             # Then, we need the eigenvalues and eigenvectors of our model for eack k-point
@@ -397,7 +420,7 @@ def main():
             print("Building the BSE matrix...")
             W_diag = diagonal_elements(Values3D)
             W_non_diag = out_of_diagonal(Vectors4D, Values3D, Kx, Ky,
-                                        dk2, N_submesh, **potential_params)
+                                        dk2, N_submesh, epsilon, r_0)
             W_total = W_diag + W_non_diag
             # Solutions of the BSE:
             print("Diagonalizing the BSE matrix...")
@@ -422,7 +445,8 @@ def main():
                             "_eV_size_" + str(max_size) +
                             "_eps_" + str(epsilon_eff) +
                             "_discrete_" + str(min_points) +
-                            "_" + str(max_points)
+                            "_" + str(max_points)+
+                            "sub_mesh_" + str(N_submesh)
                             )
             info_file_path_and_name = common_path + "info_BSE_" + common_name
             data_file_path_and_name = common_path + "data_BSE_" + common_name
@@ -453,8 +477,8 @@ def main():
 
 
 if __name__ == '__main__':
-    import timeit
-    setup = "from __main__ import main"
-    Ntimes = 1
-    print(timeit.timeit("main()", setup=setup, number=Ntimes))
-    # main()
+    # import timeit
+    # setup = "from __main__ import main"
+    # Ntimes = 1
+    # print(timeit.timeit("main()", setup=setup, number=Ntimes))
+    main()
