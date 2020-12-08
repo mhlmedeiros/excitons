@@ -317,7 +317,7 @@ def main():
     gamma = 2.6e2 # meV*nm ~ 2.6 eV*AA
     Egap = 2.4e3 # meV ~ 2.4 eV
     r0_chosen = 4.51 # nm (WSe2)
-    epsilon_eff = 4.5
+    epsilon_eff = 1
 
     alpha_options = ['zero', 'masses', 'corrected']
     # alpha_choice = int((input('''Enter the 'alphas-choice'(0/1/2):
@@ -390,9 +390,9 @@ def main():
     # ============================================================================ #
     ## Choose the number of discrete points to investigate the convergence:
     # ============================================================================ #
-    min_points = 15
-    max_points = 15
-    N_submesh = 15
+    min_points = 101
+    max_points = 101
+    N_submesh = None
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
 
