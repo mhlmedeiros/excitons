@@ -202,7 +202,7 @@ def rytova_keldysh_average(k_vec_diff, dk2, N_submesh, epsilon, r_0):
     * where: dw = sqrt(dk2)
     """
     if N_submesh==None:
-        q = k_vec_diff[0]**2 + k_vec_diff[1]**2
+        q = np.sqrt(k_vec_diff[0]**2 + k_vec_diff[1]**2)
         Potential_value = rytova_keldysh_pontual(q, dk2, epsilon, r_0)
     else:
         dw = np.sqrt(dk2)
@@ -212,7 +212,7 @@ def rytova_keldysh_average(k_vec_diff, dk2, N_submesh, epsilon, r_0):
             for wy in w_array:
                 w_vec = np.array([wx, wy])
                 q_vec = k_vec_diff + w_vec
-                q = q_vec[0]**2 + q_vec[1]**2
+                q = np.sqrt(q_vec[0]**2 + q_vec[1]**2)
                 Potential_value += rytova_keldysh_pontual(q, dk2, epsilon, r_0)
         Potential_value = Potential_value/(N_submesh**2)
     return Potential_value
@@ -317,7 +317,7 @@ def main():
     gamma = 2.6e2 # meV*nm ~ 2.6 eV*AA
     Egap = 2.4e3 # meV ~ 2.4 eV
     r0_chosen = 4.51 # nm (WSe2)
-    epsilon_eff = 1
+    epsilon_eff = 4.5
 
     alpha_options = ['zero', 'masses', 'corrected']
     # alpha_choice = int((input('''Enter the 'alphas-choice'(0/1/2):
@@ -390,8 +390,8 @@ def main():
     # ============================================================================ #
     ## Choose the number of discrete points to investigate the convergence:
     # ============================================================================ #
-    min_points = 101
-    max_points = 101
+    min_points = 11
+    max_points = 11
     N_submesh = None
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
