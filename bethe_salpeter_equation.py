@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
 import sys
+import time
 import numpy as np
 import scipy.linalg as LA
-import sympy
+# import sympy
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import itertools as it
+from numba import njit
 
 import wannier_coulomb_numba as wannier
 
@@ -15,6 +17,17 @@ HBAR = 1.23984193/(2*np.pi)         # eV 1e-6 m/c
 M_0  = 0.51099895000                # MeV/c^2
 hbar2_over2m = HBAR**2/(2*M_0)*1e3  # meV nm^2
 
+def st_time(func):
+    """
+    st decorator to calculate the total time of a func
+    """
+    def st_func(*args, **keyArgs):
+        t1 = time.time()
+        r = func(*args, **keyArgs)
+        t2 = time.time()
+        print("Function=%s, Time=%s" % (func.__name__, t2 - t1))
+        return r
+    return st_func
 
 def hamiltonian(kx, ky, E_gap=0.5, Gamma=1, Alpha_c=1, Alpha_v=-1):
     """
@@ -94,21 +107,23 @@ def diagonal_elements(Values):
     W_diag_matrix = np.diagflat(W_diagonal)
     return W_diag_matrix
 
-def calculate_distance_k_pontual(k1_ind, k2_ind, kx_flat, ky_flat):
+def calculate_distance_k_pontual(k1_vec, k2_vec):
     """
     Like the version used in the Wannier this function calculates the "distance" between two points
     in the reciprocal space. The difference is that here it just returns one value instead of
     the whole matrix with all possible pairs' distances.
     """
-    dist = np.sqrt((kx_flat[k1_ind]-kx_flat[k2_ind])**2 + (ky_flat[k1_ind]-ky_flat[k2_ind])**2)
+    k_rel_vec = k1_vec-k2_vec
+    dist = np.sqrt(k_rel_vec @ k_rel_vec)
     return dist
 
-def rytova_keldysh_pontual(k1_ind, k2_ind, kx_flat, ky_flat, dk2, epsilon=2, r_0=4.51):
+@njit
+def rytova_keldysh_pontual(q, dk2, epsilon, r_0):
     """
-    The "pontual" version of the that one in Wannier script. Instead of return the whole matrix
-    this function returns only the value asked.
+    The "pontual" version of the function in Wannier script.
+    Instead of return the whole matrix this function returns
+    only the value asked.
     """
-    q = calculate_distance_k_pontual(k1_ind, k2_ind, kx_flat, ky_flat)
     Vkk_const = 1e6/(2*EPSILON_0)
     V =  1/(epsilon*q + r_0*q**2)
     return - Vkk_const * dk2/(2*np.pi)**2 * V
@@ -175,8 +190,66 @@ def delta_k1k2(k1_ind, k2_ind, Vectors, Values):
 
     return Delta_k1_k2.reshape(cond_n*vale_n, cond_n*vale_n)
 
-def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, **params):
 
+# ============================================================================= #
+##                              Rytova-Keldysh average:
+# ============================================================================= #
+@njit
+def rytova_keldysh_average(k_vec_diff, dk2, N_submesh, epsilon, r_0):
+    """
+    As we've been using a square lattice, we can use
+    * w_x_array == w_y_array -> w_array
+    * with limits:  -dw/2, +dw/2
+    * where: dw = sqrt(dk2)
+    """
+    if N_submesh==None:
+        q = np.sqrt(k_vec_diff[0]**2 + k_vec_diff[1]**2)
+        Potential_value = rytova_keldysh_pontual(q, dk2, epsilon, r_0)
+    else:
+        dk = np.sqrt(dk2)
+        w_array = np.linspace(-dk, dk, N_submesh)
+        Potential_value = 0
+        N_sing = 0
+        for wx in w_array:
+            for wy in w_array:
+                w_vec = np.array([wx, wy])
+                q_vec = k_vec_diff + w_vec
+                q = np.sqrt(q_vec[0]**2 + q_vec[1]**2)
+                if q == 0: continue; N_sing += 1 # skip singularities
+                Potential_value += rytova_keldysh_pontual(q, dk2, epsilon, r_0)
+        Potential_value = Potential_value/(N_submesh**2 - N_sing)
+    return Potential_value
+
+@njit
+def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0):
+    """
+    CONSIDERING A SQUARE K-SPACE GRID
+    """
+    n_all_k_space = len(kx_flat)
+    n_first_row_k = int(np.sqrt(n_all_k_space)) # number of points in the first row of the grid
+    M_first_rows = np.zeros((n_first_row_k, n_all_k_space))
+    M_complete = np.zeros((n_all_k_space, n_all_k_space))
+    print("\t\tCalculating the first rows (it may take a while)...")
+    for k1_ind in range(n_first_row_k):
+        for k2_ind in range(k1_ind+1, n_all_k_space):
+            k1_vec = np.array((kx_flat[k1_ind], ky_flat[k1_ind]))
+            k2_vec = np.array((kx_flat[k2_ind], ky_flat[k2_ind]))
+            k_diff = k1_vec - k2_vec
+            M_first_rows[k1_ind, k2_ind] = rytova_keldysh_average(k_diff, dk2, N_submesh, epsilon, r_0)
+
+    print("\t\tOrganizing the the calculated values...")
+    M_complete[:n_first_row_k,:] = M_first_rows
+    for row in range(1, n_first_row_k):
+        ni, nf = row * n_first_row_k, (row+1) * n_first_row_k
+        mi, mf = ni, -ni
+        M_complete[ni:nf, mi:] = M_first_rows[:, :mf]
+
+    M_complete += M_complete.T
+    # plt.imshow(M_complete)
+    return M_complete
+
+
+def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh, epsilon, r_0):
     # First we need some information about the shape of "Values"
     kx_len, ky_len, num_states = Values.shape
     cond_v, vale_v = split_values(Values[0,0,:]) # Just to set the size of the holder matrix
@@ -191,21 +264,36 @@ def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, **params):
     W_ND = np.zeros((S*Z,S*Z), dtype=complex)
     # Just for test purpose:
     # indice_k2_test_1, indice_k2_test_2 = np.random.randint(1,Z,2)
+
+    #==================#
+    #  Rytova-Keldysh  #
+    #==================#
+    print("\tCalculating the Rytova-Keldysh potential...")
+    V_RK = smart_rytova_keldysh_matrix(Kx_flat, Ky_flat, dk2, N_submesh, epsilon, r_0)
+
     #==============#
     #  main loop:  #
     #==============#
+    print("\tInserting the mixing terms Delta(kcv,k'c'v')...")
     for k1 in range(Z-1):
         for k2 in range(k1+1, Z):
             # Signal included in "rytova_keldysh_pontual":
             delta = delta_k1k2(k1, k2, Vectors, Values)
-            Dk1k2 = delta * rytova_keldysh_pontual(k1,k2,Kx_flat,Ky_flat,dk2,**params)
+            # k1_vec = np.array([Kx_flat[k1], Ky_flat[k1]])
+            # k2_vec = np.array([Kx_flat[k2], Ky_flat[k2]])
+            # k_diff = k1_vec - k2_vec
+            Dk1k2 = delta * V_RK[k1, k2] # USE THIS ONE WITH "smart_rytova_keldysh_matrix"
+            # Dk1k2 = delta * rytova_keldysh_average(k_diff, dk2, N_submesh, epsilon, r_0)
             # if k1 == 0 and k2 == indice_k2_test_1 : print("Delta_k1_k2: ", delta)
             # elif k1 == 0 and k2 == indice_k2_test_2 : print("Delta_k1_k2: ",delta)
             W_ND[k1*S:(k1+1)*S, k2*S:(k2+1)*S] = Dk1k2
             W_ND[k2*S:(k2+1)*S, k1*S:(k1+1)*S] = Dk1k2.T.conj()
-
     return W_ND
 
+
+# ============================================================================= #
+##                              Visualization:
+# ============================================================================= #
 def plot_wave_function(eigvecs_holder, state_preview):
     N = int(np.sqrt(eigvecs_holder.shape[0]))
     wave_funct = np.reshape(eigvecs_holder[:, state_preview, 0],(N,N))
@@ -215,15 +303,13 @@ def plot_wave_function(eigvecs_holder, state_preview):
     plt.show()
 
 
-
+@st_time
 def main():
-
     # ============================================================================= #
     ##                              Outuput options:
     # ============================================================================= #
     save = True
     preview = True
-
 
     # ============================================================================= #
     ##                      Hamiltonian and Potential parameters:
@@ -233,20 +319,23 @@ def main():
     gamma = 2.6e2 # meV*nm ~ 2.6 eV*AA
     Egap = 2.4e3 # meV ~ 2.4 eV
     r0_chosen = 4.51 # nm (WSe2)
-    epsilon_eff = 4.5
+    epsilon_eff = 1
 
     alpha_options = ['zero', 'masses', 'corrected']
-    alpha_choice = int((input('''Enter the 'alphas-choice'(0/1/2):
-            option (0) : alphas == 0 (default)
-            option (1) : alphas == 1/m_j (WSe2 masses)
-            option (2) : alphas == 'corrected'
-            your option = ''')) or "0")
+    # alpha_choice = int((input('''Enter the 'alphas-choice'(0/1/2):
+    #         option (0) : alphas == 0 (default)
+    #         option (1) : alphas == 1/m_j (WSe2 masses)
+    #         option (2) : alphas == 'corrected'
+    #         your option = ''')) or "0")
+    alpha_choice = 0
 
     if alpha_choice in (0,1,2):
         alpha_option = alpha_options[alpha_choice]
     else:
         alpha_option = alpha_options[0]
+
     print("Option adopted: %s" % alpha_option)
+
     if alpha_choice == 1:
         alphac, alphav = 1/mc, 1/mv
     elif alpha_choice == 2:
@@ -254,8 +343,6 @@ def main():
         alphav = 1/mv - 1/hbar2_over2m * (gamma**2/Egap)
     else:
         alphac, alphav = 0, 0
-
-
 
     ## TERMINAL OPTIONS:
     while len(sys.argv) > 1:
@@ -283,9 +370,14 @@ def main():
         # due to the current strategy using "split_values" function,
         # this artificial gap prevent this problem.
         Egap = 1e-5
+
+    # HAMILTONIAN PARAMS
     hamiltonian_params = dict(E_gap=Egap, Alpha_c=alphac,
                              Alpha_v=alphav, Gamma=gamma)
-    potential_params = dict(epsilon=epsilon_eff, r_0=r0_chosen)
+
+    # POTENTIAL PARAMS
+    epsilon = epsilon_eff
+    r_0 = r0_chosen
 
 
     # ============================================================================ #
@@ -300,15 +392,16 @@ def main():
     # ============================================================================ #
     ## Choose the number of discrete points to investigate the convergence:
     # ============================================================================ #
-    min_points = 107
-    max_points = 111
+    min_points = 101
+    max_points = 101
+    N_submesh = 101
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
 
     # ============================================================================ #
     ##              Matrices to hold the eigenvalues and the eigenvectors:
     # ============================================================================ #
-    number_of_recorded_states = 15
+    number_of_recorded_states = 100
     eigvals_holder = np.zeros((number_of_recorded_states, len(n_points), len(L_values)))
     eigvecs_holder = np.zeros((max_points**2, number_of_recorded_states, len(L_values)),dtype=complex)
 
@@ -319,17 +412,20 @@ def main():
     for ind_L in range(len(L_values)):
         print("\nCalculating the system with {} nm^(-1).".format(L_values[ind_L]))
         for ind_Nk in range(len(n_points)):
-            print("Discretization: {}".format(n_points[ind_Nk]))
+            print("Discretization: {}x{} ".format(n_points[ind_Nk], n_points[ind_Nk]))
             # First we have to define the grid:
             Kx, Ky, dk2 = wannier.define_grid_k(L_values[ind_L], n_points[ind_Nk])
             # Then, we need the eigenvalues and eigenvectors of our model for eack k-point
             Values3D, Vectors4D = values_and_vectors(hamiltonian, Kx, Ky, **hamiltonian_params)
 
             # The Bethe-Salpeter Equation:
+            print("Building the BSE matrix...")
             W_diag = diagonal_elements(Values3D)
-            W_non_diag = out_of_diagonal(Vectors4D, Values3D, Kx, Ky, dk2, **potential_params)
+            W_non_diag = out_of_diagonal(Vectors4D, Values3D, Kx, Ky,
+                                        dk2, N_submesh, epsilon, r_0)
             W_total = W_diag + W_non_diag
             # Solutions of the BSE:
+            print("Diagonalizing the BSE matrix...")
             values, vectors = LA.eigh(W_total)
 
             # SAVE THE FIRST STATES ("number_of_recorded_states"):
@@ -341,33 +437,34 @@ def main():
         # SAVE THE VECTORS WITH THE FINEST DISCRETIZATION:
         eigvecs_holder[:, :, ind_L] = vectors[:,:number_of_recorded_states]
 
+    if save:
+        common_path = "../Data/BSE_results/"
+        common_name = (
+                        "alphas_" + alpha_option +
+                        "_gamma_" + str(gamma*1e-2)  +
+                        "_eV_AA_Eg_" + str(Egap*1e-3) +
+                        "_eV_size_" + str(max_size) +
+                        "_eps_" + str(epsilon_eff) +
+                        "_discrete_" + str(max_points)+
+                        "_sub_mesh_" + str(N_submesh) +
+                        "_with_smart_rytova_keldysh"+
+                        "_submesh_limits_-dk_+dk"
+                        )
+        info_file_path_and_name = common_path + "info_BSE_" + common_name
+        data_file_path_and_name = common_path + "data_BSE_" + common_name
 
-        if save:
-            common_path = "../Data/BSE_results/"
-            common_name = (
-                            "alphas_" + alpha_option +
-                            "_gamma_" + str(gamma*1e-2)  +
-                            "_eV_AA_Eg_" + str(Egap*1e-3) +
-                            "_eV_size_" + str(max_size) +
-                            "_eps_" + str(epsilon_eff) +
-                            "_discrete_" + str(min_points) +
-                            "_" + str(max_points)
-                            )
-            info_file_path_and_name = common_path + "info_BSE_" + common_name
-            data_file_path_and_name = common_path + "data_BSE_" + common_name
 
+        print("\n\nSaving...")
+        # ======================================================================== #
+        #                           SAVE SOME INFO
+        # ======================================================================== #
+        np.savez(info_file_path_and_name, L_values=L_values, n_points=n_points)
 
-            print("\n\nSaving...")
-            # ======================================================================== #
-            #                           SAVE SOME INFO
-            # ======================================================================== #
-            np.savez(info_file_path_and_name, L_values=L_values, n_points=n_points)
-
-            # ======================================================================== #
-            #              SAVE MATRICES WITH THE RESULTS
-            # ======================================================================== #
-            np.savez(data_file_path_and_name, eigvals_holder=eigvals_holder, eigvecs_holder=eigvecs_holder)
-            print("Done!")
+        # ======================================================================== #
+        #              SAVE MATRICES WITH THE RESULTS
+        # ======================================================================== #
+        np.savez(data_file_path_and_name, eigvals_holder=eigvals_holder, eigvecs_holder=eigvecs_holder)
+        print("Done!")
 
     if preview:
         print("Non-extrapolated binding-energies:")
@@ -377,9 +474,13 @@ def main():
         # fig, ax = plt.subplots(figsize=(10,10))
         # ax.imshow(np.(W_non_diag))
         # plt.show()
-        state_preview = 0
-        plot_wave_function(eigvecs_holder, state_preview)
+        # state_preview = 0
+        # plot_wave_function(eigvecs_holder, state_preview)
 
 
 if __name__ == '__main__':
+    # import timeit
+    # setup = "from __main__ import main"
+    # Ntimes = 1
+    # print(timeit.timeit("main()", setup=setup, number=Ntimes))
     main()
