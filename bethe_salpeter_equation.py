@@ -4,7 +4,7 @@ import sys
 import time
 import numpy as np
 import scipy.linalg as LA
-import sympy
+# import sympy
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import itertools as it
@@ -120,8 +120,9 @@ def calculate_distance_k_pontual(k1_vec, k2_vec):
 @njit
 def rytova_keldysh_pontual(q, dk2, epsilon, r_0):
     """
-    The "pontual" version of the that one in Wannier script. Instead of return the whole matrix
-    this function returns only the value asked.
+    The "pontual" version of the function in Wannier script.
+    Instead of return the whole matrix this function returns
+    only the value asked.
     """
     Vkk_const = 1e6/(2*EPSILON_0)
     V =  1/(epsilon*q + r_0*q**2)
@@ -205,16 +206,18 @@ def rytova_keldysh_average(k_vec_diff, dk2, N_submesh, epsilon, r_0):
         q = np.sqrt(k_vec_diff[0]**2 + k_vec_diff[1]**2)
         Potential_value = rytova_keldysh_pontual(q, dk2, epsilon, r_0)
     else:
-        dw = np.sqrt(dk2)
-        w_array = np.linspace(-dw/2, dw/2, N_submesh)
+        dk = np.sqrt(dk2)
+        w_array = np.linspace(-dk, dk, N_submesh)
         Potential_value = 0
+        N_sing = 0
         for wx in w_array:
             for wy in w_array:
                 w_vec = np.array([wx, wy])
                 q_vec = k_vec_diff + w_vec
                 q = np.sqrt(q_vec[0]**2 + q_vec[1]**2)
+                if q == 0: continue; N_sing += 1 # skip singularities
                 Potential_value += rytova_keldysh_pontual(q, dk2, epsilon, r_0)
-        Potential_value = Potential_value/(N_submesh**2)
+        Potential_value = Potential_value/(N_submesh**2 - N_sing)
     return Potential_value
 
 @njit
@@ -226,7 +229,7 @@ def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0):
     n_first_row_k = int(np.sqrt(n_all_k_space)) # number of points in the first row of the grid
     M_first_rows = np.zeros((n_first_row_k, n_all_k_space))
     M_complete = np.zeros((n_all_k_space, n_all_k_space))
-    print("\t\tCalculating the first rows (it may take a long time)...")
+    print("\t\tCalculating the first rows (it may take a while)...")
     for k1_ind in range(n_first_row_k):
         for k2_ind in range(k1_ind+1, n_all_k_space):
             k1_vec = np.array((kx_flat[k1_ind], ky_flat[k1_ind]))
@@ -246,8 +249,7 @@ def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0):
     return M_complete
 
 
-def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh,
-                    epsilon, r_0):
+def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh, epsilon, r_0):
     # First we need some information about the shape of "Values"
     kx_len, ky_len, num_states = Values.shape
     cond_v, vale_v = split_values(Values[0,0,:]) # Just to set the size of the holder matrix
@@ -268,7 +270,6 @@ def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh,
     #==================#
     print("\tCalculating the Rytova-Keldysh potential...")
     V_RK = smart_rytova_keldysh_matrix(Kx_flat, Ky_flat, dk2, N_submesh, epsilon, r_0)
-    # print(V_RK)
 
     #==============#
     #  main loop:  #
@@ -281,7 +282,8 @@ def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh,
             # k1_vec = np.array([Kx_flat[k1], Ky_flat[k1]])
             # k2_vec = np.array([Kx_flat[k2], Ky_flat[k2]])
             # k_diff = k1_vec - k2_vec
-            Dk1k2 = delta * V_RK[k1,k2]
+            Dk1k2 = delta * V_RK[k1, k2] # USE THIS ONE WITH "smart_rytova_keldysh_matrix"
+            # Dk1k2 = delta * rytova_keldysh_average(k_diff, dk2, N_submesh, epsilon, r_0)
             # if k1 == 0 and k2 == indice_k2_test_1 : print("Delta_k1_k2: ", delta)
             # elif k1 == 0 and k2 == indice_k2_test_2 : print("Delta_k1_k2: ",delta)
             W_ND[k1*S:(k1+1)*S, k2*S:(k2+1)*S] = Dk1k2
@@ -317,7 +319,7 @@ def main():
     gamma = 2.6e2 # meV*nm ~ 2.6 eV*AA
     Egap = 2.4e3 # meV ~ 2.4 eV
     r0_chosen = 4.51 # nm (WSe2)
-    epsilon_eff = 4.5
+    epsilon_eff = 1
 
     alpha_options = ['zero', 'masses', 'corrected']
     # alpha_choice = int((input('''Enter the 'alphas-choice'(0/1/2):
@@ -390,9 +392,9 @@ def main():
     # ============================================================================ #
     ## Choose the number of discrete points to investigate the convergence:
     # ============================================================================ #
-    min_points = 11
-    max_points = 11
-    N_submesh = None
+    min_points = 101
+    max_points = 101
+    N_submesh = 101
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
 
@@ -435,34 +437,34 @@ def main():
         # SAVE THE VECTORS WITH THE FINEST DISCRETIZATION:
         eigvecs_holder[:, :, ind_L] = vectors[:,:number_of_recorded_states]
 
+    if save:
+        common_path = "../Data/BSE_results/"
+        common_name = (
+                        "alphas_" + alpha_option +
+                        "_gamma_" + str(gamma*1e-2)  +
+                        "_eV_AA_Eg_" + str(Egap*1e-3) +
+                        "_eV_size_" + str(max_size) +
+                        "_eps_" + str(epsilon_eff) +
+                        "_discrete_" + str(max_points)+
+                        "_sub_mesh_" + str(N_submesh) +
+                        "_with_smart_rytova_keldysh"+
+                        "_submesh_limits_-dk_+dk"
+                        )
+        info_file_path_and_name = common_path + "info_BSE_" + common_name
+        data_file_path_and_name = common_path + "data_BSE_" + common_name
 
-        if save:
-            common_path = "../Data/BSE_results/"
-            common_name = (
-                            "alphas_" + alpha_option +
-                            "_gamma_" + str(gamma*1e-2)  +
-                            "_eV_AA_Eg_" + str(Egap*1e-3) +
-                            "_eV_size_" + str(max_size) +
-                            "_eps_" + str(epsilon_eff) +
-                            "_discrete_" + str(min_points) +
-                            "_" + str(max_points)+
-                            "sub_mesh_" + str(N_submesh)
-                            )
-            info_file_path_and_name = common_path + "info_BSE_" + common_name
-            data_file_path_and_name = common_path + "data_BSE_" + common_name
 
+        print("\n\nSaving...")
+        # ======================================================================== #
+        #                           SAVE SOME INFO
+        # ======================================================================== #
+        np.savez(info_file_path_and_name, L_values=L_values, n_points=n_points)
 
-            print("\n\nSaving...")
-            # ======================================================================== #
-            #                           SAVE SOME INFO
-            # ======================================================================== #
-            np.savez(info_file_path_and_name, L_values=L_values, n_points=n_points)
-
-            # ======================================================================== #
-            #              SAVE MATRICES WITH THE RESULTS
-            # ======================================================================== #
-            np.savez(data_file_path_and_name, eigvals_holder=eigvals_holder, eigvecs_holder=eigvecs_holder)
-            print("Done!")
+        # ======================================================================== #
+        #              SAVE MATRICES WITH THE RESULTS
+        # ======================================================================== #
+        np.savez(data_file_path_and_name, eigvals_holder=eigvals_holder, eigvecs_holder=eigvecs_holder)
+        print("Done!")
 
     if preview:
         print("Non-extrapolated binding-energies:")
@@ -472,8 +474,8 @@ def main():
         # fig, ax = plt.subplots(figsize=(10,10))
         # ax.imshow(np.(W_non_diag))
         # plt.show()
-        state_preview = 0
-        plot_wave_function(eigvecs_holder, state_preview)
+        # state_preview = 0
+        # plot_wave_function(eigvecs_holder, state_preview)
 
 
 if __name__ == '__main__':
