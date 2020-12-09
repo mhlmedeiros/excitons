@@ -207,7 +207,7 @@ def rytova_keldysh_average(k_vec_diff, dk2, N_submesh, epsilon, r_0):
         Potential_value = rytova_keldysh_pontual(q, dk2, epsilon, r_0)
     else:
         dk = np.sqrt(dk2)
-        w_array = np.linspace(-dk, dk, N_submesh)
+        w_array = np.linspace(-dk/2, dk/2, N_submesh)
         Potential_value = 0
         N_sing = 0
         for wx in w_array:
