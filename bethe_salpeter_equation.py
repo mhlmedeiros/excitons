@@ -292,6 +292,16 @@ def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh, epsil
 
 
 # ============================================================================= #
+##                              BSE - Exchange term:
+# ============================================================================= #
+def exchange_bse(Vectors, Values, r_0, d):
+    epsilon_m = 2*r_0/d
+    int_laplacian_V = - 1e6/(EPSILON_0 * epsilon_m)
+    return X
+
+
+
+# ============================================================================= #
 ##                              Visualization:
 # ============================================================================= #
 def plot_wave_function(eigvecs_holder, state_preview):
