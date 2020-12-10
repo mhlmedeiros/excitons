@@ -83,7 +83,12 @@ def split_values(values_array):
     valence_values = [value for value in values_array if value <= 0]
     return conduction_values, valence_values
 
-def diagonal_elements(Values):
+def diagonal_elements(Values, dk2, N_submesh, epsilon, r_0):
+
+    # Lets start with the potential around |k-k'| = 0
+    k_vec_diff = np.array([0,0])
+    V_0 = rytova_keldysh_average(k_vec_diff, dk2, N_submesh, epsilon, r_0)
+
     # First we get some information about the shape of "Values"
     kx_len, ky_len, num_vals = Values.shape
     cond_v, valen_v = split_values(Values[0,0,:]) # Just to set the size of the holder matrix
@@ -100,7 +105,7 @@ def diagonal_elements(Values):
         # For each pair conduction valence we calculate (Ec - Ev)
         for p in it.product(conduction_values, valence_values[::-1]):
             diag_val = p[0]-p[1]
-            W_diagonal[n] = diag_val # save in right place
+            W_diagonal[n] = diag_val + V_0 # save in right place
             n += 1 # update the counter
 
     # Now we put this array into the main diagonal of a matrix
