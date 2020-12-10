@@ -324,8 +324,8 @@ def main():
     r0_chosen = 4.51 # nm (WSe2)
 
     ## PAULO'S TEST:
-    gamma = 1311.79 # meV*nm ~ 2.6 eV*AA
-    Egap = 3.91504469e2 # meV ~ 2.4 eV
+    Egap = 1311.79 # meV*nm ~ 2.6 eV*AA
+    gamma = 3.91504469e2 # meV ~ 2.4 eV
 
 
     epsilon_eff = 1
