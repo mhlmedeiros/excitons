@@ -39,6 +39,15 @@
     * $α_c = \frac{1}{m_c} + \frac{2m_0}{ħ^2}(\frac{γ}{E_{gap}})$
     * $α_v = \frac{1}{m_c} - \frac{2m_0}{ħ^2}(\frac{γ}{E_{gap}})$
 
+6. Paulo's test:
+    * $E_{gap} = 1311.79$ meV
+    * $γ = 3.91504469 \times 10^2$ meV nm
+    * $ε = 1$ ◀
+    * $α_c = 0$
+    * $α_v = 0$
+    * mesh = $101\times101$
+    * submesh = $101\times101$
+
 ---
 
 ## Improvements in the code

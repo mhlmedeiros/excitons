@@ -448,7 +448,7 @@ def main():
                         "_discrete_" + str(max_points)+
                         "_sub_mesh_" + str(N_submesh) +
                         "_with_smart_rytova_keldysh"+
-                        "_submesh_limits_-dk/2_+dk/2"
+                        "_submesh_limits_half_dk"
                         )
         info_file_path_and_name = common_path + "info_BSE_" + common_name
         data_file_path_and_name = common_path + "data_BSE_" + common_name
