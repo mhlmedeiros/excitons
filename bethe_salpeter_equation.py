@@ -122,16 +122,6 @@ def calculate_distance_k_pontual(k1_vec, k2_vec):
     dist = np.sqrt(k_rel_vec @ k_rel_vec)
     return dist
 
-@njit
-def rytova_keldysh_pontual(q, dk2, epsilon, r_0):
-    """
-    The "pontual" version of the function in Wannier script.
-    Instead of return the whole matrix this function returns
-    only the value asked.
-    """
-    Vkk_const = 1e6/(2*EPSILON_0)
-    V =  1/(epsilon*q + r_0*q**2)
-    return - Vkk_const * dk2/(2*np.pi)**2 * V
 
 def delta_k1k2_cv(k1_ind, k2_ind, c1_ind, c2_ind, v1_ind, v2_ind, Vectors_flattened):
     """
@@ -179,9 +169,10 @@ def delta_k1k2(k1_ind, k2_ind, Vectors, Values):
 
     # The order of the values is always from the smallest to the largest
     # Remember that the smallest value for conduction bands is also the closest
-    # one of the gap among conduction states
-    # On the other hand, the largest valence band is the the closest one of
-    # the gap among valence bands.
+    # one of the gap among all the conduction states
+    # On the other hand, the largest valence band is the closest of the gap
+    # among valence bands.
+
     cond_inds = list(range(cond_n))
     vale_inds = list(range(-1,-1*(vale_n+1),-1))
 
@@ -197,8 +188,19 @@ def delta_k1k2(k1_ind, k2_ind, Vectors, Values):
 
 
 # ============================================================================= #
-##                              Rytova-Keldysh average:
+##                              Rytova-Keldysh:
 # ============================================================================= #
+@njit
+def rytova_keldysh_pontual(q, dk2, epsilon, r_0):
+    """
+    The "pontual" version of the function in Wannier script.
+    Instead of return the whole matrix this function returns
+    only the value asked.
+    """
+    Vkk_const = 1e6/(2*EPSILON_0)
+    V =  1/(epsilon*q + r_0*q**2)
+    return - Vkk_const * dk2/(2*np.pi)**2 * V
+
 @njit
 def rytova_keldysh_average(k_vec_diff, dk2, N_submesh, epsilon, r_0):
     """
@@ -259,7 +261,7 @@ def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0):
 
 def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh, epsilon, r_0):
     # First we need some information about the shape of "Values"
-    kx_len, ky_len, num_states = Values.shape
+    # kx_len, ky_len, num_states = Values.shape
     cond_v, vale_v = split_values(Values[0,0,:]) # Just to set the size of the holder matrix
 
     # To calculate the Rytova-Keldysh potential using just one index to identify a k-point:
@@ -299,6 +301,46 @@ def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh, epsil
     return W_ND
 
 
+def potential_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0):
+    """
+    This function generates a square matrix that contain the values of
+    the potential for each pair of vectors k & k'.
+    """
+    # DIAGONAL VALUE: EQUAL FOR EVERY POINT
+    k_0 = np.array([0,0])
+    V_0 = rytova_keldysh_average(k_0, dk2, N_submesh, epsilon, r_0)
+
+    # OUT OF DIAGONAL: SMART SCHEME
+    V_nondiag = smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0)
+
+    # PUT ALL TOGETHER
+    V_main = np.fill_diagonal(V_nondiag, V_0)
+
+    return V_main
+
+
+def include_deltas(V_RK, Values, Vectors,):
+    # It is crucial to know how many conduction and valence bands we have:
+    cond_v, vale_v = split_values(Values[0,0,:]) # Just to set the size of the holder matrix
+
+    S = len(cond_v) * len(vale_v) # This is the amount of combinations of conduction and valence bands
+    Z,_ = V_RK.shape # number of points in reciprocal space
+    W_ND = np.zeros((S*Z,S*Z), dtype=complex) # initiate an empty matrix
+
+    ## NON-DIAGONAL && DIAGONAL BLOCKS:
+    for k1 in range(Z):
+        for k2 in range(k1, Z):
+            # THE DELTAS CAN BE MATRICES, IT DEPENDS ON THE HAMILTONIAN MODEL:
+            delta = delta_k1k2(k1, k2, Vectors, Values)
+            Dk1k2 = delta * V_RK[k1, k2] # USE THIS ONE WITH
+            W_ND[k1*S:(k1+1)*S, k2*S:(k2+1)*S] = Dk1k2
+            if k1 != k2:
+                # FOR NON-DIAGONAL BLOCKS:
+                W_ND[k2*S:(k2+1)*S, k1*S:(k1+1)*S] = Dk1k2.T.conj()
+
+    return W_ND
+
+
 # ============================================================================= #
 ##                              Visualization:
 # ============================================================================= #
@@ -329,8 +371,8 @@ def main():
     r0_chosen = 4.51 # nm (WSe2)
 
     ## PAULO'S TEST:
-    gamma = 1311.79 # meV*nm ~ 2.6 eV*AA
-    Egap = 3.91504469e2 # meV ~ 2.4 eV
+    gamma =  3.91504469e2# meV*nm ~ 2.6 eV*AA
+    Egap = 1311.79 # meV ~ 2.4 eV
 
 
     epsilon_eff = 1
@@ -433,7 +475,11 @@ def main():
             Values3D, Vectors4D = values_and_vectors(hamiltonian, Kx, Ky, **hamiltonian_params)
 
             # The Bethe-Salpeter Equation:
+            print("Building Potential matrix (Nk x Nk)... ")
+            print("Including 'mixing' terms (Deltas)... ")
+            print("Including 'pure' diagonal elements..")
             print("Building the BSE matrix...")
+
             W_diag = diagonal_elements(Values3D)
             W_non_diag = out_of_diagonal(Vectors4D, Values3D, Kx, Ky,
                                         dk2, N_submesh, epsilon, r_0)
