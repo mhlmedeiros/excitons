@@ -215,8 +215,11 @@ def rytova_keldysh_average(k_vec_diff, dk2, N_submesh, epsilon, r_0):
                 w_vec = np.array([wx, wy])
                 q_vec = k_vec_diff + w_vec
                 q = np.sqrt(q_vec[0]**2 + q_vec[1]**2)
-                if q == 0: continue; N_sing += 1 # skip singularities
+                if q == 0:
+                    N_sing += 1
+                    continue; # skip singularities
                 Potential_value += rytova_keldysh_pontual(q, dk2, epsilon, r_0)
+        if N_sing != 0 : print("Number of singular points: ", N_sing)
         Potential_value = Potential_value/(N_submesh**2 - N_sing)
     return Potential_value
 
@@ -314,12 +317,19 @@ def main():
     # ============================================================================= #
     ##                      Hamiltonian and Potential parameters:
     # ============================================================================= #
-    mc = 0.2834  # M_0
-    mv = -0.3636 # M_0
-    gamma = 2.6e2 # meV*nm ~ 2.6 eV*AA
-    Egap = 2.4e3 # meV ~ 2.4 eV
+    # mc = 0.2834  # M_0
+    # mv = -0.3636 # M_0
+    # gamma = 2.6e2 # meV*nm ~ 2.6 eV*AA
+    # Egap = 2.4e3 # meV ~ 2.4 eV
     r0_chosen = 4.51 # nm (WSe2)
+
+    ## PAULO'S TEST:
+    gamma = 1311.79 # meV*nm ~ 2.6 eV*AA
+    Egap = 3.91504469e2 # meV ~ 2.4 eV
+
+
     epsilon_eff = 1
+    alpha_choice = 0
 
     alpha_options = ['zero', 'masses', 'corrected']
     # alpha_choice = int((input('''Enter the 'alphas-choice'(0/1/2):
@@ -327,7 +337,6 @@ def main():
     #         option (1) : alphas == 1/m_j (WSe2 masses)
     #         option (2) : alphas == 'corrected'
     #         your option = ''')) or "0")
-    alpha_choice = 0
 
     if alpha_choice in (0,1,2):
         alpha_option = alpha_options[alpha_choice]
@@ -394,7 +403,7 @@ def main():
     # ============================================================================ #
     min_points = 101
     max_points = 101
-    N_submesh = 101
+    N_submesh = None
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
 
