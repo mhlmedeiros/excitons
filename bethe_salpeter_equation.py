@@ -84,11 +84,22 @@ def split_values(values_array):
     return conduction_values, valence_values
 
 def diagonal_elements(Values):
+    """
+    Function tha returns a diagonal matrix which has the elements defined as
 
-    # # Lets start with the potential around |k-k'| = 0
-    # k_vec_diff = np.array([0,0])
-    # V_0 = rytova_keldysh_average(k_vec_diff, dk2, N_submesh, epsilon, r_0)
+        W_diag_matrix[n,n] = E_c(k) - E_v(k)
 
+    Note that a diagonal element in the BSE-matrix is defined by
+        * c = c'
+        * v = v'
+        * k = k'
+
+    Of course the value given above isn't the only contribution to the diagonal
+    elements of BSE-matrix. The following contribution also has diagonal contribution:
+
+        * Exchange term: X (NOT IMPLEMENTED YET)
+        * Potential term: when average around the |k-k'|=0 is considered.
+    """
     # First we get some information about the shape of "Values"
     kx_len, ky_len, num_vals = Values.shape
     cond_v, valen_v = split_values(Values[0,0,:]) # Just to set the size of the holder matrix
@@ -112,16 +123,10 @@ def diagonal_elements(Values):
     W_diag_matrix = np.diagflat(W_diagonal)
     return W_diag_matrix
 
-def calculate_distance_k_pontual(k1_vec, k2_vec):
-    """
-    Like the version used in the Wannier this function calculates the "distance" between two points
-    in the reciprocal space. The difference is that here it just returns one value instead of
-    the whole matrix with all possible pairs' distances.
-    """
-    k_rel_vec = k1_vec-k2_vec
-    dist = np.sqrt(k_rel_vec @ k_rel_vec)
-    return dist
 
+# ============================================================================= #
+##                              Deltas (Mixing):
+# ============================================================================= #
 
 def delta_k1k2_cv(k1_ind, k2_ind, c1_ind, c2_ind, v1_ind, v2_ind, Vectors_flattened):
     """
@@ -221,7 +226,6 @@ def rytova_keldysh_average(k_vec_diff, dk2, N_submesh, epsilon, r_0):
             for wy in w_array:
                 w_vec = np.array([wx, wy])
                 q_vec = k_vec_diff + w_vec
-                # q = np.sqrt(q_vec[0]**2 + q_vec[1]**2)
                 q = np.linalg.norm(q_vec)
                 if q == 0:
                     N_sing += 1
@@ -235,7 +239,17 @@ def rytova_keldysh_average(k_vec_diff, dk2, N_submesh, epsilon, r_0):
 @njit
 def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0):
     """
-    CONSIDERING A SQUARE K-SPACE GRID
+    CONSIDERING A SQUARE K-SPACE GRID:
+
+    This function explore the regularity in the meshgrid that defines the k-space
+    to build the potential-matrix [V(k-k')].
+
+    Note that it is exclusive for the Rytova-Keldysh potential.
+
+    # TODO: to make this function more general in the sense that any other potential
+    function could be adopted: Define a Potential-class and  pass instances of such
+    class instead of pass attributes of Rytova-Keldysh potential.
+
     """
     n_all_k_space = len(kx_flat)
     n_first_row_k = int(np.sqrt(n_all_k_space)) # number of points in the first row of the grid
@@ -261,48 +275,6 @@ def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0):
     return M_complete
 
 
-def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh, epsilon, r_0):
-    # First we need some information about the shape of "Values"
-    # kx_len, ky_len, num_states = Values.shape
-    cond_v, vale_v = split_values(Values[0,0,:]) # Just to set the size of the holder matrix
-
-    # To calculate the Rytova-Keldysh potential using just one index to identify a k-point:
-    Kx_flat = kx_matrix.flatten()
-    Ky_flat = ky_matrix.flatten()
-
-    # It is crucial to know how many conduction and valence bands we have:
-    S = len(cond_v) * len(vale_v) # This is the amount of combinations of conduction and valence bands
-    Z = len(Kx_flat) # number of points in reciprocal space
-    W_ND = np.zeros((S*Z,S*Z), dtype=complex)
-    # Just for test purpose:
-    # indice_k2_test_1, indice_k2_test_2 = np.random.randint(1,Z,2)
-
-    #==================#
-    #  Rytova-Keldysh  #
-    #==================#
-    print("\tCalculating the Rytova-Keldysh potential...")
-    V_RK = smart_rytova_keldysh_matrix(Kx_flat, Ky_flat, dk2, N_submesh, epsilon, r_0)
-
-    #==============#
-    #  main loop:  #
-    #==============#
-    print("\tInserting the mixing terms Delta(kcv,k'c'v')...")
-    for k1 in range(Z-1):
-        for k2 in range(k1+1, Z):
-            # Signal included in "rytova_keldysh_pontual":
-            delta = delta_k1k2(k1, k2, Vectors, Values)
-            # k1_vec = np.array([Kx_flat[k1], Ky_flat[k1]])
-            # k2_vec = np.array([Kx_flat[k2], Ky_flat[k2]])
-            # k_diff = k1_vec - k2_vec
-            Dk1k2 = delta * V_RK[k1, k2] # USE THIS ONE WITH "smart_rytova_keldysh_matrix"
-            # Dk1k2 = delta * rytova_keldysh_average(k_diff, dk2, N_submesh, epsilon, r_0)
-            # if k1 == 0 and k2 == indice_k2_test_1 : print("Delta_k1_k2: ", delta)
-            # elif k1 == 0 and k2 == indice_k2_test_2 : print("Delta_k1_k2: ",delta)
-            W_ND[k1*S:(k1+1)*S, k2*S:(k2+1)*S] = Dk1k2
-            W_ND[k2*S:(k2+1)*S, k1*S:(k1+1)*S] = Dk1k2.T.conj()
-    return W_ND
-
-
 # ============================================================================= #
 ##                     Rytova-Keldysh Average around zero:
 # ============================================================================= #
@@ -318,18 +290,15 @@ def potential_matrix(kx_matrix, ky_matrix, dk2, epsilon, r_0, N_submesh):
     ky_flat = ky_matrix.flatten()
     # OUT OF DIAGONAL: SMART SCHEME
     V_main = smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0)
-    # print("Tipo V_main = ", type(V_main))
+
     # DIAGONAL VALUE: EQUAL FOR EVERY POINT (WHEN USING SUBMESH)
     if N_submesh != None:
         print("\t\tCalculating the potential around zero...")
         k_0 = np.array([0,0])
         V_0 = rytova_keldysh_average(k_0, dk2, N_submesh, epsilon, r_0)
-        # print("V_0 = ", V_0)
-        # PUT ALL TOGETHER
-        np.fill_diagonal(V_main, V_0)
+        np.fill_diagonal(V_main, V_0) # PUT ALL TOGETHER
 
     return V_main
-
 
 def include_deltas(V_RK, Values, Vectors, N_submesh):
     """
@@ -377,15 +346,15 @@ def plot_wave_function(eigvecs_holder, state_preview):
 
 @st_time
 def main():
-    # ============================================================================= #
+    # ========================================================================= #
     ##                              Outuput options:
-    # ============================================================================= #
+    # ========================================================================= #
     save = True
     preview = True
 
-    # ============================================================================= #
+    # ========================================================================= #
     ##                      Hamiltonian and Potential parameters:
-    # ============================================================================= #
+    # ========================================================================= #
     # mc = 0.2834  # M_0
     # mv = -0.3636 # M_0
     # gamma = 2.6e2 # meV*nm ~ 2.6 eV*AA
@@ -458,41 +427,43 @@ def main():
     r_0 = r0_chosen
 
 
-    # ============================================================================ #
+    # ========================================================================= #
     ## Define the sizes of the region in k-space to be investigated:
-    # ============================================================================ #
+    # ========================================================================= #
     min_size = 5 # nm^-1
     max_size = 5 # nm^-1
     L_values = range(min_size, max_size + 1) # [min (min+1) ... max] # nm^-1
     list(L_values)
 
 
-    # ============================================================================ #
-    ## Choose the number of discrete points to investigate the convergence:
-    # ============================================================================ #
+    # ========================================================================= #
+    ##    Choose the number of discrete points to investigate the convergence:
+    # ========================================================================= #
     min_points = 101
     max_points = 101
     N_submesh = 101
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
 
-    # ============================================================================ #
+    # ========================================================================= #
     ##              Matrices to hold the eigenvalues and the eigenvectors:
-    # ============================================================================ #
+    # ========================================================================= #
     number_of_recorded_states = 100
     eigvals_holder = np.zeros((number_of_recorded_states, len(n_points), len(L_values)))
     eigvecs_holder = np.zeros((max_points**2, number_of_recorded_states, len(L_values)),dtype=complex)
 
 
-    # ============================================================================ #
+    # ========================================================================= #
     ##                                  main_loop
-    # ============================================================================ #
+    # ========================================================================= #
     for ind_L in range(len(L_values)):
         print("\nCalculating the system with {} nm^(-1).".format(L_values[ind_L]))
         for ind_Nk in range(len(n_points)):
             print("Discretization: {} x {} ".format(n_points[ind_Nk], n_points[ind_Nk]))
+
             # First we have to define the grid:
             Kx, Ky, dk2 = wannier.define_grid_k(L_values[ind_L], n_points[ind_Nk])
+
             # Then, we need the eigenvalues and eigenvectors of our model for eack k-point
             Values3D, Vectors4D = values_and_vectors(hamiltonian, Kx, Ky, **hamiltonian_params)
 
@@ -507,17 +478,9 @@ def main():
             W_diag = diagonal_elements(Values3D)
             W_total = W_diag + W_non_diag
 
-            # print("Building the BSE matrix...")
-            # W_diag = diagonal_elements(Values3D)
-            # W_non_diag = out_of_diagonal(Vectors4D, Values3D, Kx, Ky,
-            #                             dk2, N_submesh, epsilon, r_0)
-            # W_total = W_diag + W_non_diag
-
             # Solutions of the BSE:
             print("\tDiagonalizing the BSE matrix...")
             values, vectors = LA.eigh(W_total)
-
-
 
             # SAVE THE FIRST STATES ("number_of_recorded_states"):
             # Note, as we want the binding energies, we have to discount the gap
@@ -546,14 +509,14 @@ def main():
 
 
         print("\n\nSaving...")
-        # ======================================================================== #
+        # ===================================================================== #
         #                           SAVE SOME INFO
-        # ======================================================================== #
+        # ===================================================================== #
         np.savez(info_file_path_and_name, L_values=L_values, n_points=n_points)
 
-        # ======================================================================== #
+        # ===================================================================== #
         #              SAVE MATRICES WITH THE RESULTS
-        # ======================================================================== #
+        # ===================================================================== #
         np.savez(data_file_path_and_name, eigvals_holder=eigvals_holder, eigvecs_holder=eigvecs_holder)
         print("Done!")
 
