@@ -127,7 +127,6 @@ def diagonal_elements(Values):
 # ============================================================================= #
 ##                              Deltas (Mixing):
 # ============================================================================= #
-
 def delta_k1k2_cv(k1_ind, k2_ind, c1_ind, c2_ind, v1_ind, v2_ind, Vectors_flattened):
     """
     This function perfoms the inner product of the eigenstates of the model
@@ -278,7 +277,7 @@ def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0):
 # ============================================================================= #
 ##                     Rytova-Keldysh Average around zero:
 # ============================================================================= #
-def potential_matrix(kx_matrix, ky_matrix, dk2, epsilon, r_0, N_submesh):
+def potential_matrix(kx_matrix, ky_matrix, dk2, epsilon, r_0, N_submesh, submesh_off_diag=True):
     """
     This function generates a square matrix that contains the values of
     the potential for each pair of vectors k & k'.
@@ -288,8 +287,10 @@ def potential_matrix(kx_matrix, ky_matrix, dk2, epsilon, r_0, N_submesh):
     """
     kx_flat = kx_matrix.flatten()
     ky_flat = ky_matrix.flatten()
+
     # OUT OF DIAGONAL: SMART SCHEME
-    V_main = smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0)
+    N_submesh_off = N_submesh if submesh_off_diag == True else None
+    V_main = smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh_off, epsilon, r_0)
 
     # DIAGONAL VALUE: EQUAL FOR EVERY POINT (WHEN USING SUBMESH)
     if N_submesh != None:
@@ -299,6 +300,7 @@ def potential_matrix(kx_matrix, ky_matrix, dk2, epsilon, r_0, N_submesh):
         np.fill_diagonal(V_main, V_0) # PUT ALL TOGETHER
 
     return V_main
+
 
 def include_deltas(V_RK, Values, Vectors, N_submesh):
     """
@@ -439,9 +441,10 @@ def main():
     # ========================================================================= #
     ##    Choose the number of discrete points to investigate the convergence:
     # ========================================================================= #
-    min_points = 101
-    max_points = 101
-    N_submesh = 101
+    min_points = 11
+    max_points = 11
+    N_submesh = 11
+    avg_pot_off_diag = False
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
 
@@ -469,7 +472,7 @@ def main():
 
             # The Bethe-Salpeter Equation:
             print("\tBuilding Potential matrix (Nk x Nk)... ")
-            V_kk = potential_matrix(Kx, Ky, dk2, epsilon, r_0, N_submesh)
+            V_kk = potential_matrix(Kx, Ky, dk2, epsilon, r_0, N_submesh, submesh_off_diag=avg_pot_off_diag)
 
             print("\tIncluding 'mixing' terms (Deltas)... ")
             W_non_diag = include_deltas(V_kk, Values3D, Vectors4D, N_submesh)
@@ -502,7 +505,7 @@ def main():
                         "_discrete_" + str(max_points)+
                         "_sub_mesh_" + str(N_submesh) +
                         "_with_smart_rytova_keldysh"+
-                        "_with_potential_average_around_zero"
+                        "_with_potential_average_only_around_zero"
                         )
         info_file_path_and_name = common_path + "info_BSE_" + common_name
         data_file_path_and_name = common_path + "data_BSE_" + common_name
