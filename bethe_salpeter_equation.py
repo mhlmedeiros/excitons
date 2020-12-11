@@ -318,14 +318,15 @@ def potential_matrix(kx_matrix, ky_matrix, dk2, epsilon, r_0, N_submesh):
     ky_flat = ky_matrix.flatten()
     # OUT OF DIAGONAL: SMART SCHEME
     V_main = smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0)
-
+    # print("Tipo V_main = ", type(V_main))
     # DIAGONAL VALUE: EQUAL FOR EVERY POINT (WHEN USING SUBMESH)
     if N_submesh != None:
         print("\t\tCalculating the potential around zero...")
         k_0 = np.array([0,0])
         V_0 = rytova_keldysh_average(k_0, dk2, N_submesh, epsilon, r_0)
+        # print("V_0 = ", V_0)
         # PUT ALL TOGETHER
-        V_main = np.fill_diagonal(V_main, V_0)
+        np.fill_diagonal(V_main, V_0)
 
     return V_main
 
@@ -469,9 +470,9 @@ def main():
     # ============================================================================ #
     ## Choose the number of discrete points to investigate the convergence:
     # ============================================================================ #
-    min_points = 11
-    max_points = 11
-    N_submesh = None
+    min_points = 101
+    max_points = 101
+    N_submesh = 101
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
 
