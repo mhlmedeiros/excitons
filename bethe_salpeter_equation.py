@@ -306,7 +306,7 @@ def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh, epsil
 # ============================================================================= #
 ##                     Rytova-Keldysh Average around zero:
 # ============================================================================= #
-def potential_matrix(kx_flat, ky_flat, dk2, epsilon, r_0, N_submesh=None):
+def potential_matrix(kx_matrix, ky_matrix, dk2, epsilon, r_0, N_submesh):
     """
     This function generates a square matrix that contains the values of
     the potential for each pair of vectors k & k'.
@@ -314,7 +314,8 @@ def potential_matrix(kx_flat, ky_flat, dk2, epsilon, r_0, N_submesh=None):
     Dimensions = Nk x Nk
     where Nk = (Nk_x * Nk_y)
     """
-
+    kx_flat = kx_matrix.flatten()
+    ky_flat = ky_matrix.flatten()
     # OUT OF DIAGONAL: SMART SCHEME
     V_main = smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0)
 
@@ -494,26 +495,28 @@ def main():
             # Then, we need the eigenvalues and eigenvectors of our model for eack k-point
             Values3D, Vectors4D = values_and_vectors(hamiltonian, Kx, Ky, **hamiltonian_params)
 
-            # # The Bethe-Salpeter Equation:
-            # print("\tBuilding Potential matrix (Nk x Nk)... ")
-            # V_kk = potential_matrix(Kx, Ky, dk2, epsilon, r_0, N_submesh)
-            #
-            # print("\tIncluding 'mixing' terms (Deltas)... ")
-            # W_non_diag = include_deltas(V_kk, Values3D, Vectors4D, N_submesh)
-            #
-            # print("\tIncluding 'pure' diagonal elements..")
-            # W_diag = diagonal_elements(Values3D)
-            # W_total = W_diag + W_non_diag
+            # The Bethe-Salpeter Equation:
+            print("\tBuilding Potential matrix (Nk x Nk)... ")
+            V_kk = potential_matrix(Kx, Ky, dk2, epsilon, r_0, N_submesh)
 
-            print("Building the BSE matrix...")
+            print("\tIncluding 'mixing' terms (Deltas)... ")
+            W_non_diag = include_deltas(V_kk, Values3D, Vectors4D, N_submesh)
+
+            print("\tIncluding 'pure' diagonal elements..")
             W_diag = diagonal_elements(Values3D)
-            W_non_diag = out_of_diagonal(Vectors4D, Values3D, Kx, Ky,
-                                        dk2, N_submesh, epsilon, r_0)
             W_total = W_diag + W_non_diag
+
+            # print("Building the BSE matrix...")
+            # W_diag = diagonal_elements(Values3D)
+            # W_non_diag = out_of_diagonal(Vectors4D, Values3D, Kx, Ky,
+            #                             dk2, N_submesh, epsilon, r_0)
+            # W_total = W_diag + W_non_diag
 
             # Solutions of the BSE:
             print("\tDiagonalizing the BSE matrix...")
             values, vectors = LA.eigh(W_total)
+
+
 
             # SAVE THE FIRST STATES ("number_of_recorded_states"):
             # Note, as we want the binding energies, we have to discount the gap
