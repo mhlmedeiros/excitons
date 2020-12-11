@@ -221,12 +221,14 @@ def rytova_keldysh_average(k_vec_diff, dk2, N_submesh, epsilon, r_0):
             for wy in w_array:
                 w_vec = np.array([wx, wy])
                 q_vec = k_vec_diff + w_vec
-                q = np.sqrt(q_vec[0]**2 + q_vec[1]**2)
+                # q = np.sqrt(q_vec[0]**2 + q_vec[1]**2)
+                q = np.linalg.norm(q_vec)
                 if q == 0:
                     N_sing += 1
                     continue; # skip singularities
                 Potential_value += rytova_keldysh_pontual(q, dk2, epsilon, r_0)
-        if N_sing != 0 : print("Number of singular points: ", N_sing)
+        if N_sing != 0 :
+            print("\t\t\tFor k-k' = ", k_vec_diff ," the number of singular points was ", N_sing)
         Potential_value = Potential_value/(N_submesh**2 - N_sing)
     return Potential_value
 
@@ -301,25 +303,42 @@ def out_of_diagonal(Vectors, Values, kx_matrix, ky_matrix, dk2, N_submesh, epsil
     return W_ND
 
 
-def potential_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0):
+# ============================================================================= #
+##                     Rytova-Keldysh Average around zero:
+# ============================================================================= #
+
+def potential_matrix(kx_flat, ky_flat, dk2, epsilon, r_0, N_submesh=None):
     """
-    This function generates a square matrix that contain the values of
+    This function generates a square matrix that contains the values of
     the potential for each pair of vectors k & k'.
+
+    Dimensions = Nk x Nk
+    where Nk = (Nk_x * Nk_y)
     """
-    # DIAGONAL VALUE: EQUAL FOR EVERY POINT
-    k_0 = np.array([0,0])
-    V_0 = rytova_keldysh_average(k_0, dk2, N_submesh, epsilon, r_0)
 
     # OUT OF DIAGONAL: SMART SCHEME
-    V_nondiag = smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0)
+    V_main = smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0)
 
-    # PUT ALL TOGETHER
-    V_main = np.fill_diagonal(V_nondiag, V_0)
+    # DIAGONAL VALUE: EQUAL FOR EVERY POINT (WHEN USING SUBMESH)
+    if N_submesh != None:
+        print("\t\tCalculating the potential around zero...")
+        k_0 = np.array([0,0])
+        V_0 = rytova_keldysh_average(k_0, dk2, N_submesh, epsilon, r_0)
+        # PUT ALL TOGETHER
+        V_main = np.fill_diagonal(V_main, V_0)
 
     return V_main
 
 
-def include_deltas(V_RK, Values, Vectors,):
+def include_deltas(V_RK, Values, Vectors, N_submesh):
+    """
+    Once potential matrix [V(k-k')] is available one can add the 'mixing'
+    term. This mixing term is defined for every c-c' and v-v' pairs
+    and also for every k-k' combination:
+
+    Delta([c,v,k],[c',v',k']) = < c,k |c',k'> * <v',k'|v,k >
+
+    """
     # It is crucial to know how many conduction and valence bands we have:
     cond_v, vale_v = split_values(Values[0,0,:]) # Just to set the size of the holder matrix
 
@@ -327,9 +346,11 @@ def include_deltas(V_RK, Values, Vectors,):
     Z,_ = V_RK.shape # number of points in reciprocal space
     W_ND = np.zeros((S*Z,S*Z), dtype=complex) # initiate an empty matrix
 
-    ## NON-DIAGONAL && DIAGONAL BLOCKS:
-    for k1 in range(Z):
-        for k2 in range(k1, Z):
+    correction = (N_submesh == None)
+
+    ## NON-DIAGONAL && DIAGONAL BLOCKS (if correction == False):
+    for k1 in range(Z - correction):
+        for k2 in range(k1 + correction, Z):
             # THE DELTAS CAN BE MATRICES, IT DEPENDS ON THE HAMILTONIAN MODEL:
             delta = delta_k1k2(k1, k2, Vectors, Values)
             Dk1k2 = delta * V_RK[k1, k2] # USE THIS ONE WITH
@@ -468,24 +489,31 @@ def main():
     for ind_L in range(len(L_values)):
         print("\nCalculating the system with {} nm^(-1).".format(L_values[ind_L]))
         for ind_Nk in range(len(n_points)):
-            print("Discretization: {}x{} ".format(n_points[ind_Nk], n_points[ind_Nk]))
+            print("Discretization: {} x {} ".format(n_points[ind_Nk], n_points[ind_Nk]))
             # First we have to define the grid:
             Kx, Ky, dk2 = wannier.define_grid_k(L_values[ind_L], n_points[ind_Nk])
             # Then, we need the eigenvalues and eigenvectors of our model for eack k-point
             Values3D, Vectors4D = values_and_vectors(hamiltonian, Kx, Ky, **hamiltonian_params)
 
             # The Bethe-Salpeter Equation:
-            print("Building Potential matrix (Nk x Nk)... ")
-            print("Including 'mixing' terms (Deltas)... ")
-            print("Including 'pure' diagonal elements..")
-            print("Building the BSE matrix...")
+            print("\tBuilding Potential matrix (Nk x Nk)... ")
+            V_kk = potential_matrix(kx_flat, ky_flat, dk2, epsilon, r_0, N_submesh=None)
 
+            print("\tIncluding 'mixing' terms (Deltas)... ")
+            W_non_diag = include_deltas(V_RK, Values, Vectors, N_submesh)
+
+            print("\tIncluding 'pure' diagonal elements..")
             W_diag = diagonal_elements(Values3D)
-            W_non_diag = out_of_diagonal(Vectors4D, Values3D, Kx, Ky,
-                                        dk2, N_submesh, epsilon, r_0)
             W_total = W_diag + W_non_diag
+
+            # print("Building the BSE matrix...")
+            # W_diag = diagonal_elements(Values3D)
+            # W_non_diag = out_of_diagonal(Vectors4D, Values3D, Kx, Ky,
+            #                             dk2, N_submesh, epsilon, r_0)
+            # W_total = W_diag + W_non_diag
+
             # Solutions of the BSE:
-            print("Diagonalizing the BSE matrix...")
+            print("\tDiagonalizing the BSE matrix...")
             values, vectors = LA.eigh(W_total)
 
             # SAVE THE FIRST STATES ("number_of_recorded_states"):
@@ -508,7 +536,7 @@ def main():
                         "_discrete_" + str(max_points)+
                         "_sub_mesh_" + str(N_submesh) +
                         "_with_smart_rytova_keldysh"+
-                        "_submesh_limits_half_dk"
+                        "_with_potential_average_around_zero"
                         )
         info_file_path_and_name = common_path + "info_BSE_" + common_name
         data_file_path_and_name = common_path + "data_BSE_" + common_name
