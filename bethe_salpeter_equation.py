@@ -29,7 +29,7 @@ def st_time(func):
         return r
     return st_func
 
-def hamiltonian(kx, ky, E_gap=0.5, Gamma=1, Alpha_c=1, Alpha_v=-1):
+def hamiltonian2x2(kx, ky, E_gap=0.5, Gamma=1, Alpha_c=1, Alpha_v=-1):
     """
     Simple Hamiltonian to test the implementation:
 
@@ -43,6 +43,20 @@ def hamiltonian(kx, ky, E_gap=0.5, Gamma=1, Alpha_c=1, Alpha_v=-1):
     H = np.array([[E_gap + hbar2_over2m * Alpha_c * k2, Gamma*(kx+1j*ky)],
                   [Gamma*(kx-1j*ky), hbar2_over2m * Alpha_v * k2]])
     return H
+
+def hamiltonian4x4(kx, ky, E_gap=0.5, Gamma=1, Alpha_c=1, Alpha_v=-1):
+    """
+    Definition of a spinfull degenerate Hamiltonian.
+        - No SO-couplings
+        - Block-diagonal
+        - 2 identical blocks at diagonals
+    """
+    H2x2 = hamiltonian2x2(kx, ky, E_gap, Gamma, Alpha_c, Alpha_v)
+    H4x4 = np.block([
+        [H2x2, np.zeros(2,2)],
+        [np.zeros(2,2), H2x2]
+        ])
+    return H4x4
 
 def values_and_vectors(hamiltonian, kx_matrix, ky_matrix, **kwargs):
     """
@@ -168,8 +182,8 @@ def delta_k1k2(k1_ind, k2_ind, Vectors, Values):
     vale_n = len(vale_vs)
     Delta_k1_k2 = np.zeros((cond_n*vale_n)**2, dtype=complex)
 
-    n, m, s = Values.shape # n -> kx-points; m -> ky -> points; s -> # of eigenvalues
-    V_flat = Vectors.reshape(n*m, s, s)
+    nkx, nky, nstates = Values.shape # nkx -> kx-points; nky -> ky -> points; nstates -> # of eigenvalues
+    V_flat = Vectors.reshape(nkx*nky, nstates, nstates)
 
     # The order of the values is always from the smallest to the largest
     # Remember that the smallest value for conduction bands is also the closest
@@ -206,37 +220,41 @@ def rytova_keldysh_pontual(q, dk2, epsilon, r_0):
     return - Vkk_const * dk2/(2*np.pi)**2 * V
 
 @njit
-def rytova_keldysh_average(k_vec_diff, dk2, N_submesh, epsilon, r_0):
+def rytova_keldysh_average(k_vec_diff, dk2, epsilon, r_0, N_submesh, submesh_radius):
     """
     As we've been using a square lattice, we can use
     * w_x_array == w_y_array -> w_array
     * with limits:  -dw/2, +dw/2
     * where: dw = sqrt(dk2)
     """
+    k_diff_norm = np.linalg.norm(k_vec_diff)
+    dk = np.sqrt(dk2)
+    threshold = submesh_radius * dk
+
     if N_submesh==None:
-        q = np.sqrt(k_vec_diff[0]**2 + k_vec_diff[1]**2)
-        Potential_value = rytova_keldysh_pontual(q, dk2, epsilon, r_0)
-    else:
-        dk = np.sqrt(dk2)
+        Potential_value = rytova_keldysh_pontual(k_vec_diff, dk2, epsilon, r_0)
+    elif k_diff_norm <= threshold :
+        # THIS BLOCK WILL RUN ONLY IF "k_diff_norm" IS EQUAL OR SMALLER
+        # THAN A LIMIT, DENOTED HERE BY "threshold":
         w_array = np.linspace(-dk/2, dk/2, N_submesh)
         Potential_value = 0
-        N_sing = 0
+        number_of_sing_points = 0
         for wx in w_array:
             for wy in w_array:
                 w_vec = np.array([wx, wy])
                 q_vec = k_vec_diff + w_vec
                 q = np.linalg.norm(q_vec)
                 if q == 0:
-                    N_sing += 1
+                    number_of_sing_points += 1
                     continue; # skip singularities
                 Potential_value += rytova_keldysh_pontual(q, dk2, epsilon, r_0)
-        if N_sing != 0 :
-            print("\t\t\tFor k-k' = ", k_vec_diff ," the number of singular points was ", N_sing)
-        Potential_value = Potential_value/(N_submesh**2 - N_sing)
+        if number_of_sing_points != 0 :
+            print("\t\t\tFor k-k' = ", k_vec_diff ," the number of singular points was ", number_of_sing_points)
+        Potential_value = Potential_value/(N_submesh**2 - number_of_sing_points)
     return Potential_value
 
 @njit
-def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0):
+def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, epsilon, r_0, N_submesh, submesh_radius):
     """
     CONSIDERING A SQUARE K-SPACE GRID:
 
@@ -260,7 +278,7 @@ def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0):
             k1_vec = np.array([kx_flat[k1_ind], ky_flat[k1_ind]])
             k2_vec = np.array([kx_flat[k2_ind], ky_flat[k2_ind]])
             k_diff = k1_vec - k2_vec
-            M_first_rows[k1_ind, k2_ind] = rytova_keldysh_average(k_diff, dk2, N_submesh, epsilon, r_0)
+            M_first_rows[k1_ind, k2_ind] = rytova_keldysh_average(k_diff, dk2, epsilon, r_0, N_submesh, submesh_radius)
 
     print("\t\tOrganizing the the calculated values...")
     M_complete[:n_first_row_k,:] = M_first_rows
@@ -277,7 +295,7 @@ def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh, epsilon, r_0):
 # ============================================================================= #
 ##                     Rytova-Keldysh Average around zero:
 # ============================================================================= #
-def potential_matrix(kx_matrix, ky_matrix, dk2, epsilon, r_0, N_submesh, submesh_off_diag=True):
+def potential_matrix(kx_matrix, ky_matrix, dk2, epsilon, r_0, N_submesh, submesh_radius=0):
     """
     This function generates a square matrix that contains the values of
     the potential for each pair of vectors k & k'.
@@ -290,13 +308,13 @@ def potential_matrix(kx_matrix, ky_matrix, dk2, epsilon, r_0, N_submesh, submesh
 
     # OUT OF DIAGONAL: SMART SCHEME
     N_submesh_off = N_submesh if submesh_off_diag == True else None
-    V_main = smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, N_submesh_off, epsilon, r_0)
+    V_main = smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, epsilon, r_0, N_submesh_off, submesh_limit)
 
     # DIAGONAL VALUE: EQUAL FOR EVERY POINT (WHEN USING SUBMESH)
     if N_submesh != None:
         print("\t\tCalculating the potential around zero...")
         k_0 = np.array([0,0])
-        V_0 = rytova_keldysh_average(k_0, dk2, N_submesh, epsilon, r_0)
+        V_0 = rytova_keldysh_average(k_0, dk2, epsilon, r_0, N_submesh, submesh_radius)
         np.fill_diagonal(V_main, V_0) # PUT ALL TOGETHER
 
     return V_main
@@ -451,10 +469,10 @@ def main():
     # ========================================================================= #
     ##    Choose the number of discrete points to investigate the convergence:
     # ========================================================================= #
-    min_points = 11
-    max_points = 11
-    N_submesh = 11
-    avg_pot_off_diag = False
+    min_points = 101
+    max_points = 101
+    N_submesh = 101
+    submesh_limit = 1 # units of Delta_k (square lattice)
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
 
@@ -469,30 +487,43 @@ def main():
     # ========================================================================= #
     ##                                  main_loop
     # ========================================================================= #
+    @st_time
+    def build_bse_matrix(ind_L, ind_Nk):
+        # First we have to define the grid:
+        Kx, Ky, dk2 = wannier.define_grid_k(L_values[ind_L], n_points[ind_Nk])
+
+        # Then, we need the eigenvalues and eigenvectors of our model for eack k-point
+        Values3D, Vectors4D = values_and_vectors(hamiltonian2x2, Kx, Ky, **hamiltonian_params)
+
+        ### THE BETHE-SALPETER EQUATION:
+
+        # MATRIX CONSTRUCTION:
+        print("\tBuilding Potential matrix (Nk x Nk)... ")
+        V_kk = potential_matrix(Kx, Ky, dk2, epsilon, r_0, N_submesh, submesh_radius=submesh_limit)
+
+        print("\tIncluding 'mixing' terms (Deltas)... ")
+        W_non_diag = include_deltas(V_kk, Values3D, Vectors4D, N_submesh)
+
+        print("\tIncluding 'pure' diagonal elements..")
+        W_diag = diagonal_elements(Values3D)
+        W_total = W_diag + W_non_diag
+
+        return W_total
+
+    @st_time
+    def diagonalize_bse(BSE_MATRIX):
+        print("\tDiagonalizing the BSE matrix...")
+        return LA.eigh(BSE_MATRIX)
+
     for ind_L in range(len(L_values)):
         print("\nCalculating the system with {} nm^(-1).".format(L_values[ind_L]))
         for ind_Nk in range(len(n_points)):
             print("Discretization: {} x {} ".format(n_points[ind_Nk], n_points[ind_Nk]))
 
-            # First we have to define the grid:
-            Kx, Ky, dk2 = wannier.define_grid_k(L_values[ind_L], n_points[ind_Nk])
+            # BUILD THE MATRIX:
+            W_total = build_bse_matrix(ind_L, ind_Nk)
 
-            # Then, we need the eigenvalues and eigenvectors of our model for eack k-point
-            Values3D, Vectors4D = values_and_vectors(hamiltonian, Kx, Ky, **hamiltonian_params)
-
-            # The Bethe-Salpeter Equation:
-            print("\tBuilding Potential matrix (Nk x Nk)... ")
-            V_kk = potential_matrix(Kx, Ky, dk2, epsilon, r_0, N_submesh, submesh_off_diag=avg_pot_off_diag)
-
-            print("\tIncluding 'mixing' terms (Deltas)... ")
-            W_non_diag = include_deltas(V_kk, Values3D, Vectors4D, N_submesh)
-
-            print("\tIncluding 'pure' diagonal elements..")
-            W_diag = diagonal_elements(Values3D)
-            W_total = W_diag + W_non_diag
-
-            # Solutions of the BSE:
-            print("\tDiagonalizing the BSE matrix...")
+            # DIAGONALIZATION:
             values, vectors = LA.eigh(W_total)
 
             # SAVE THE FIRST STATES ("number_of_recorded_states"):
@@ -500,23 +531,19 @@ def main():
             eigvals_holder[:, ind_Nk, ind_L] = values[:number_of_recorded_states] - Egap
 
 
-
         # SAVE THE VECTORS WITH THE FINEST DISCRETIZATION:
         eigvecs_holder[:, :, ind_L] = vectors[:,:number_of_recorded_states]
 
     if save:
         common_path = "../Data/BSE_results/"
-        common_name = (
-                        "alphas_" + alpha_option +
+        common_name = ( "alphas_" + alpha_option +
                         "_gamma_" + str(gamma*1e-2)  +
                         "_eV_AA_Eg_" + str(Egap*1e-3) +
                         "_eV_size_" + str(max_size) +
                         "_eps_" + str(epsilon_eff) +
                         "_discrete_" + str(max_points)+
                         "_sub_mesh_" + str(N_submesh) +
-                        "_with_smart_rytova_keldysh"+
-                        "_with_potential_average_only_around_zero"
-                        )
+                        "_submesh_radius_" + str(submesh_limit))
         info_file_path_and_name = common_path + "info_BSE_" + common_name
         data_file_path_and_name = common_path + "data_BSE_" + common_name
 
