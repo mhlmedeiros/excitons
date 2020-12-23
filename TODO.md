@@ -111,6 +111,25 @@ hamiltonian_2x2
 0   # alpha_v
 ```
 
+## Sub-mesh averages
+
+**Tests**
+
+1. Sub-mesh only around the $|\vec{k} - \vec{k}'| = 0$:
+    * $N_{sub}$ = 201 x 201
+    * Time spent on BSE-matrix construction = 1204.3 s = 20.0 min
+    * Total time spent = 1905.6 s = 31.8 min
+    * $E_B^{(1s)}$ = 447.57 meV
+    * $E_B^{(2s)}$ = 201.72 meV
+
+2. Sub-mesh for all values of $|\vec{k} - \vec{k}'|$  
+    * $N_{sub}$ = 101 x 101
+    * Time spent on BSE-matrix construction = 5004.3 s = 83.4 min
+    * Total time spent = 5665.8 s = 94.4 min
+    * $E_B^{(1s)}$ = 454.68 meV
+    * $E_B^{(2s)}$ = 207.58 meV
+
+
 
 ## Results
 
