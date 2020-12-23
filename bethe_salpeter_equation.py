@@ -227,13 +227,13 @@ def rytova_keldysh_average(k_vec_diff, dk2, epsilon, r_0, N_submesh, submesh_rad
     * with limits:  -dw/2, +dw/2
     * where: dw = sqrt(dk2)
     """
-    k_diff_norm = np.linalg.norm(k_vec_diff)
+    k_diff_norm = np.sqrt(k_vec_diff[0]**2 + k_vec_diff[1]**2)
     dk = np.sqrt(dk2)
     threshold = submesh_radius * dk
 
-    if N_submesh==None:
-        Potential_value = rytova_keldysh_pontual(k_vec_diff, dk2, epsilon, r_0)
-    elif k_diff_norm <= threshold :
+    if N_submesh==None or k_diff_norm > threshold:
+        Potential_value = rytova_keldysh_pontual(k_diff_norm, dk2, epsilon, r_0)
+    else:
         # THIS BLOCK WILL RUN ONLY IF "k_diff_norm" IS EQUAL OR SMALLER
         # THAN A LIMIT, DENOTED HERE BY "threshold":
         w_array = np.linspace(-dk/2, dk/2, N_submesh)
@@ -307,8 +307,8 @@ def potential_matrix(kx_matrix, ky_matrix, dk2, epsilon, r_0, N_submesh, submesh
     ky_flat = ky_matrix.flatten()
 
     # OUT OF DIAGONAL: SMART SCHEME
-    N_submesh_off = N_submesh if submesh_off_diag == True else None
-    V_main = smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, epsilon, r_0, N_submesh_off, submesh_limit)
+    # N_submesh_off = N_submesh if submesh_off_diag == True else None
+    V_main = smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, epsilon, r_0, N_submesh, submesh_radius)
 
     # DIAGONAL VALUE: EQUAL FOR EVERY POINT (WHEN USING SUBMESH)
     if N_submesh != None:
@@ -471,8 +471,8 @@ def main():
     # ========================================================================= #
     min_points = 101
     max_points = 101
-    N_submesh = 101
-    submesh_limit = 1 # units of Delta_k (square lattice)
+    N_submesh = 1001
+    submesh_limit = 4 # units of Delta_k (square lattice)
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
 
@@ -563,13 +563,14 @@ def main():
     if preview:
         print("Non-extrapolated binding-energies:")
         print("\t[#]\t|\tValue [meV]")
-        for val_index in range(number_of_recorded_states):
-            print("\t%i\t|\t%.2f" % (val_index, values[val_index]-Egap))
         # fig, ax = plt.subplots(figsize=(10,10))
         # ax.imshow(np.(W_non_diag))
         # plt.show()
         # state_preview = 0
         # plot_wave_function(eigvecs_holder, state_preview)
+        number_of_energies_to_show = 15
+        for val_index in range(number_of_energies_to_show):
+            print("\t%i\t|\t%.2f" % (val_index, values[val_index]-Egap))
 
 
 if __name__ == '__main__':
