@@ -120,24 +120,6 @@ class H4x4_equal(H4x4_general):
         self.valeBands = 2
         self.condBands = 2
 
-
-
-
-    # def call(self, kx, ky):
-    #     Eg_up, Eg_down = self.gap_up, self.gap_down
-    #     alpha_c_up, alpha_c_down = self.alphac_up, self.alphac_down
-    #     alpha_v_up, alpha_v_down = self.alphav_up, self.alphav_down
-    #     gamma_up, gamma_down = self.gamma_up, self.gamma_down
-    #     k2 = kx**2 + ky**2
-    #     H = np.array([
-    #         [Eg_up + hbar2_over2m * alpha_c_up * k2, gamma_up*(kx+1j*ky), 0 , 0],
-    #         [gamma_up*(kx-1j*ky), hbar2_over2m * alpha_v_up * k2, 0, 0],
-    #         [0, 0, Eg_down + hbar2_over2m * alpha_c_down * k2, gamma_down*(kx+1j*ky)],
-    #         [0, 0, gamma_down*(kx-1j*ky), hbar2_over2m * alpha_v_down * k2]])
-    #     return H
-
-
-
     # def split(self,vectors):
     #     ## Revert the order (of valence bands: index [0] -> closer to the gap)
     #     valence_vectors = vectors[:,:self.valeBands]
@@ -158,18 +140,55 @@ class H4x4_equal(H4x4_general):
     #     # The operators "@" and "np.dot()" return a warning
     #     return np.sum(cond_1*cond_2) * np.sum(vale_2*vale_1)
 
+def values_and_vectors(hamiltonian, kx_matrix, ky_matrix):
+    """
+    This function calculates all the eigenvalues-eingenvectors pairs and return them
+    into two multidimensional arrays named here as W and V respectively.
+
+    The dimensions of such arrays depend on the number of sampled points of the
+    reciprocal space and on the dimensions of our model Hamiltonian.
+
+    W.shape = (# kx-points, # ky-points, # rows of "H")
+    V.shape = (# kx-points, # ky-points, # rows of "H", # columns of "H")
+
+    For "W" the order is straightforward:
+    W[i,j,0]  = "the smallest eigenvalue for kx[i] and ky[j]"
+    W[i,j,-1] = "the biggest eigenvalue for kx[i] and ky[j]"
+
+    For "V" we have:
+    V[i,j,:,0] = "first eigenvector which one corresponds to the smallest eigenvalue"
+    V[i,j,:,-1] = "last eigenvector which one corresponds to the biggest eigenvalue"
+
+    """
+    n, m = kx_matrix.shape # WE'RE ASSUMING A SQUARE GRID EQUALLY SPACED
+    l = hamiltonian.condBands + hamiltonian.valeBands
+    W = np.zeros((n,m,l))
+    V = np.zeros((n,m,l,l), dtype=complex)
+    W, V = eig_vals_vects(hamiltonian, W, V, kx_matrix, ky_matrix)
+    return W, V
+
 @njit
-def eig_vals(M):
-    return LA.eigvals(M.call(0,0))
+def eig_vals_vects(H, W, V, Kx, Ky):
+    n, m = Kx.shape # WE'RE ASSUMING A SQUARE GRID EQUALLY SPACED
+    for i in range(n):
+        for j in range(m):
+            W[i,j,:], V[i,j,:,:] = LA.eigh(H.call(Kx[i,j], Ky[i,j]))
+    return W,V
 
 def main():
+    # print(eig_vals(H))
+    # k = np.linspace(-1,1,10)
+    # Kx, Ky = np.meshgrid(k,k)
+    # eigenvalues, eigenvectors = values_and_vectors(H,Kx,Ky)
+    # print(eigenvalues)
     alphac = 0
     alphav = 0
     E_gap = 2.4e3 # meV ~ 2.4 eV
     gamma = 2.6e2 # meV*nm ~ 2.6 eV*AA
-    H = H4x4(alphac, alphav, E_gap, gamma, alphac, alphav, E_gap, gamma)
-    print(H.call(0,0))
-    print(eig_vals(H))
+    H4 = H4x4(alphac, alphav, E_gap, gamma, alphac, alphav, E_gap, gamma)
+    H2 = H2x2(alphac, alphav, E_gap, gamma)
+    print(H2.call(0,0))
+
 
 
 
