@@ -9,7 +9,6 @@ from matplotlib import cm
 import itertools as it
 from numba import njit
 import hamiltonians as ham
-
 import wannier_coulomb_numba as wannier
 
 EPSILON_0 = 55.26349406             # e^2 GeV^{-1}fm^{-1} == e^2 (1e9 eV 1e-15 m)^{-1}
@@ -29,6 +28,7 @@ def st_time(func):
         return r
     return st_func
 
+@njit
 def split_values(values_array):
     # This function splits the eigenvalues into "condution" and "valence" sets
 
@@ -82,6 +82,7 @@ def diagonal_elements(Values):
 # ============================================================================= #
 ##                              Deltas (Mixing):
 # ============================================================================= #
+@njit
 def delta_k1k2_cv(k1_ind, k2_ind, c1_ind, c2_ind, v1_ind, v2_ind, Vectors_flattened):
     """
     This function perfoms the inner product of the eigenstates of the model
@@ -101,8 +102,9 @@ def delta_k1k2_cv(k1_ind, k2_ind, c1_ind, c2_ind, v1_ind, v2_ind, Vectors_flatte
     beta_c2_k2 = Vectors_flattened[k2_ind,:,c2_ind] # c'-state
     beta_v1_k1 = Vectors_flattened[k1_ind,:,v1_ind] # v-state
     beta_v2_k2 = Vectors_flattened[k2_ind,:,v2_ind] # v'-state
-    return (beta_c1_k1.conj() @ beta_c2_k2) * (beta_v2_k2.conj() @ beta_v1_k1)
+    return np.sum(beta_c1_k1.conj() * beta_c2_k2) * np.sum(beta_v2_k2.conj() * beta_v1_k1)
 
+@njit
 def delta_k1k2(k1_ind, k2_ind, Vectors, Values):
     """
     This function generates the matrix for "Delta_k1_k2".
@@ -121,7 +123,7 @@ def delta_k1k2(k1_ind, k2_ind, Vectors, Values):
     cond_vs, vale_vs = split_values(Values[0,0,:])
     cond_n = len(cond_vs)
     vale_n = len(vale_vs)
-    Delta_k1_k2 = np.zeros((cond_n*vale_n)**2, dtype=complex)
+    Delta_k1_k2 = 1j * np.zeros((cond_n*vale_n)**2)
 
     nkx, nky, nstates = Values.shape # nkx -> kx-points; nky -> ky -> points; nstates -> # of eigenvalues
     V_flat = Vectors.reshape(nkx*nky, nstates, nstates)
@@ -135,13 +137,17 @@ def delta_k1k2(k1_ind, k2_ind, Vectors, Values):
     cond_inds = list(range(cond_n))
     vale_inds = list(range(-1,-1*(vale_n+1),-1))
 
-    #==============#
-    #  main loop:  #
-    #==============#
+    #===================================================================#
+    #                       main loop of this function:                 #
+    #===================================================================#
+    ## TO USE 'NUMBA COMPILATION IN THIS FUNCTION WE CAN'T USE 'itertools'
     n = 0
-    for (v,c,vl,cl) in it.product(vale_inds, cond_inds, vale_inds, cond_inds):
-        Delta_k1_k2[n] = delta_k1k2_cv(k1_ind, k2_ind, c, cl, v, vl, V_flat)
-        n += 1
+    for v in vale_inds:
+        for c in cond_inds:
+            for vl in vale_inds:
+                for cl in cond_inds:
+                    Delta_k1_k2[n] = delta_k1k2_cv(k1_ind, k2_ind, c, cl, v, vl, V_flat)
+                    n += 1
 
     return Delta_k1_k2.reshape(cond_n*vale_n, cond_n*vale_n)
 
@@ -276,6 +282,9 @@ def include_deltas(V_RK, Values, Vectors, N_submesh):
     Z,_ = V_RK.shape # number of points in reciprocal space
     W_ND = np.zeros((S*Z,S*Z), dtype=complex) # initiate an empty matrix
 
+    ## If the 'submesh-strategy' is not being used  we need to avoid
+    ## the diagonal elements. When the 'correction' is True (or 1), this
+    ## avoidance is implemented in the nested for-loop below.
     correction = (N_submesh == None)
 
     ## NON-DIAGONAL && DIAGONAL BLOCKS (if correction == False):
@@ -413,8 +422,8 @@ def main():
     # ========================================================================= #
     ##    Choose the number of discrete points to investigate the convergence:
     # ========================================================================= #
-    min_points = 11
-    max_points = 11
+    min_points = 41
+    max_points = 41
     N_submesh = 11
     submesh_limit = 0 # units of Delta_k (square lattice)
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
