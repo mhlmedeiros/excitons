@@ -4,12 +4,11 @@ import sys
 import time
 import numpy as np
 import scipy.linalg as LA
-# import sympy
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import itertools as it
 from numba import njit
-
+import hamiltonians as ham
 import wannier_coulomb_numba as wannier
 
 EPSILON_0 = 55.26349406             # e^2 GeV^{-1}fm^{-1} == e^2 (1e9 eV 1e-15 m)^{-1}
@@ -29,64 +28,7 @@ def st_time(func):
         return r
     return st_func
 
-def hamiltonian2x2(kx, ky, E_gap=0.5, Gamma=1, Alpha_c=1, Alpha_v=-1):
-    """
-    Simple Hamiltonian to test the implementation:
-
-    In its definition we have the effective masses "m_e" and "m_h",
-    we also have the energy "gap". The model include one conduction-band
-    and one valence-band, the couplings between these states are
-    mediated by the named parameter "gamma".
-
-    """
-    k2 = kx**2 + ky**2
-    H = np.array([[E_gap + hbar2_over2m * Alpha_c * k2, Gamma*(kx+1j*ky)],
-                  [Gamma*(kx-1j*ky), hbar2_over2m * Alpha_v * k2]])
-    return H
-
-def hamiltonian4x4(kx, ky, E_gap=0.5, Gamma=1, Alpha_c=1, Alpha_v=-1):
-    """
-    Definition of a spinfull degenerate Hamiltonian.
-        - No SO-couplings
-        - Block-diagonal
-        - 2 identical blocks at diagonals
-    """
-    H2x2 = hamiltonian2x2(kx, ky, E_gap, Gamma, Alpha_c, Alpha_v)
-    H4x4 = np.block([
-        [H2x2, np.zeros(2,2)],
-        [np.zeros(2,2), H2x2]
-        ])
-    return H4x4
-
-def values_and_vectors(hamiltonian, kx_matrix, ky_matrix, **kwargs):
-    """
-    This function calculates all the eigenvalues-eingenvectors pairs and return them
-    into two multidimensional arrays named here as W and V respectively.
-
-    The dimensions of such arrays depend on the number of sampled points of the
-    reciprocal space and on the dimensions of our model Hamiltonian.
-
-    W.shape = (# kx-points, # ky-points, # rows of "H")
-    V.shape = (# kx-points, # ky-points, # rows of "H", # columns of "H")
-
-    For "W" the order is straightforward:
-    W[i,j,0]  = "the smallest eigenvalue for kx[i] and ky[j]"
-    W[i,j,-1] = "the biggest eigenvalue for kx[i] and ky[j]"
-
-    For "V" we have:
-    V[i,j,:,0] = "first eigenvector which one corresponds to the smallest eigenvalue"
-    V[i,j,:,-1] = "last eigenvector which one corresponds to the biggest eigenvalue"
-
-    """
-    n, m = kx_matrix.shape
-    l, _ = hamiltonian(0,0,**kwargs).shape
-    W = np.zeros((n,m,l))
-    V = np.zeros((n,m,l,l),dtype=complex)
-    for i in range(n):
-        for j in range(m):
-            W[i,j,:], V[i,j,:,:]  = LA.eigh(hamiltonian(kx_matrix[i,j], ky_matrix[i,j], **kwargs))
-    return W,V
-
+@njit
 def split_values(values_array):
     # This function splits the eigenvalues into "condution" and "valence" sets
 
@@ -137,10 +79,10 @@ def diagonal_elements(Values):
     W_diag_matrix = np.diagflat(W_diagonal)
     return W_diag_matrix
 
-
 # ============================================================================= #
 ##                              Deltas (Mixing):
 # ============================================================================= #
+@njit
 def delta_k1k2_cv(k1_ind, k2_ind, c1_ind, c2_ind, v1_ind, v2_ind, Vectors_flattened):
     """
     This function perfoms the inner product of the eigenstates of the model
@@ -160,8 +102,9 @@ def delta_k1k2_cv(k1_ind, k2_ind, c1_ind, c2_ind, v1_ind, v2_ind, Vectors_flatte
     beta_c2_k2 = Vectors_flattened[k2_ind,:,c2_ind] # c'-state
     beta_v1_k1 = Vectors_flattened[k1_ind,:,v1_ind] # v-state
     beta_v2_k2 = Vectors_flattened[k2_ind,:,v2_ind] # v'-state
-    return (beta_c1_k1.conj() @ beta_c2_k2) * (beta_v2_k2.conj() @ beta_v1_k1)
+    return np.sum(beta_c1_k1.conj() * beta_c2_k2) * np.sum(beta_v2_k2.conj() * beta_v1_k1)
 
+@njit
 def delta_k1k2(k1_ind, k2_ind, Vectors, Values):
     """
     This function generates the matrix for "Delta_k1_k2".
@@ -180,7 +123,7 @@ def delta_k1k2(k1_ind, k2_ind, Vectors, Values):
     cond_vs, vale_vs = split_values(Values[0,0,:])
     cond_n = len(cond_vs)
     vale_n = len(vale_vs)
-    Delta_k1_k2 = np.zeros((cond_n*vale_n)**2, dtype=complex)
+    Delta_k1_k2 = 1j * np.zeros((cond_n*vale_n)**2)
 
     nkx, nky, nstates = Values.shape # nkx -> kx-points; nky -> ky -> points; nstates -> # of eigenvalues
     V_flat = Vectors.reshape(nkx*nky, nstates, nstates)
@@ -194,13 +137,17 @@ def delta_k1k2(k1_ind, k2_ind, Vectors, Values):
     cond_inds = list(range(cond_n))
     vale_inds = list(range(-1,-1*(vale_n+1),-1))
 
-    #==============#
-    #  main loop:  #
-    #==============#
+    #===================================================================#
+    #                       main loop of this function:                 #
+    #===================================================================#
+    ## TO USE 'NUMBA COMPILATION IN THIS FUNCTION WE CAN'T USE 'itertools'
     n = 0
-    for (v,c,vl,cl) in it.product(vale_inds, cond_inds, vale_inds, cond_inds):
-        Delta_k1_k2[n] = delta_k1k2_cv(k1_ind, k2_ind, c, cl, v, vl, V_flat)
-        n += 1
+    for v in vale_inds:
+        for c in cond_inds:
+            for vl in vale_inds:
+                for cl in cond_inds:
+                    Delta_k1_k2[n] = delta_k1k2_cv(k1_ind, k2_ind, c, cl, v, vl, V_flat)
+                    n += 1
 
     return Delta_k1_k2.reshape(cond_n*vale_n, cond_n*vale_n)
 
@@ -319,7 +266,7 @@ def potential_matrix(kx_matrix, ky_matrix, dk2, epsilon, r_0, N_submesh, submesh
 
     return V_main
 
-
+@njit
 def include_deltas(V_RK, Values, Vectors, N_submesh):
     """
     Once potential matrix [V(k-k')] is available one can add the 'mixing'
@@ -334,8 +281,11 @@ def include_deltas(V_RK, Values, Vectors, N_submesh):
 
     S = len(cond_v) * len(vale_v) # This is the amount of combinations of conduction and valence bands
     Z,_ = V_RK.shape # number of points in reciprocal space
-    W_ND = np.zeros((S*Z,S*Z), dtype=complex) # initiate an empty matrix
+    W_ND = 1j * np.zeros((S*Z,S*Z)) # initiate an empty matrix
 
+    ## If the 'submesh-strategy' is not being used  we need to avoid
+    ## the diagonal elements. When the 'correction' is True (or 1), this
+    ## avoidance is implemented in the nested for-loop below.
     correction = (N_submesh == None)
 
     ## NON-DIAGONAL && DIAGONAL BLOCKS (if correction == False):
@@ -359,7 +309,6 @@ def exchange_bse(Vectors, Values, r_0, d):
     epsilon_m = 2*r_0/d
     int_laplacian_V = - 1e6/(EPSILON_0 * epsilon_m)
     return X
-
 
 
 # ============================================================================= #
@@ -394,7 +343,6 @@ def main():
     ## PAULO'S TEST:
     gamma =  3.91504469e2# meV*nm ~ 2.6 eV*AA
     Egap = 1311.79 # meV ~ 2.4 eV
-
 
     epsilon_eff = 1
     alpha_choice = 0
@@ -456,6 +404,12 @@ def main():
     epsilon = epsilon_eff
     r_0 = r0_chosen
 
+    # ========================================================================= #
+    ##                          Define the Hamiltonian:
+    # ========================================================================= #
+    # hamiltonian = ham.H4x4_equal(alphac, alphav, Egap, gamma) # 👍
+    hamiltonian = ham.H2x2(alphac, alphav, Egap, gamma) # 👍
+
 
     # ========================================================================= #
     ## Define the sizes of the region in k-space to be investigated:
@@ -469,19 +423,23 @@ def main():
     # ========================================================================= #
     ##    Choose the number of discrete points to investigate the convergence:
     # ========================================================================= #
-    min_points = 101
-    max_points = 101
-    N_submesh = 1001
-    submesh_limit = 4 # units of Delta_k (square lattice)
+    min_points = 41
+    max_points = 41
+    N_submesh = 11
+    submesh_limit = 0 # units of Delta_k (square lattice)
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
 
     # ========================================================================= #
     ##              Matrices to hold the eigenvalues and the eigenvectors:
     # ========================================================================= #
+    # Number of valence-conduction bands combinations:
+    n_val_cond_comb = hamiltonian.condBands * hamiltonian.valeBands
     number_of_recorded_states = 100
-    eigvals_holder = np.zeros((number_of_recorded_states, len(n_points), len(L_values)))
-    eigvecs_holder = np.zeros((max_points**2, number_of_recorded_states, len(L_values)),dtype=complex)
+    eigvals_holder = np.zeros((number_of_recorded_states, len(n_points),
+                            len(L_values)))
+    eigvecs_holder = np.zeros((n_val_cond_comb * max_points**2, number_of_recorded_states,
+                            len(L_values)), dtype=complex)
 
 
     # ========================================================================= #
@@ -493,7 +451,8 @@ def main():
         Kx, Ky, dk2 = wannier.define_grid_k(L_values[ind_L], n_points[ind_Nk])
 
         # Then, we need the eigenvalues and eigenvectors of our model for eack k-point
-        Values3D, Vectors4D = values_and_vectors(hamiltonian2x2, Kx, Ky, **hamiltonian_params)
+        # Values3D, Vectors4D = values_and_vectors(hamiltonian2x2, Kx, Ky, **hamiltonian_params)
+        Values3D, Vectors4D = ham.values_and_vectors(hamiltonian, Kx, Ky)
 
         ### THE BETHE-SALPETER EQUATION:
 
