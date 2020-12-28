@@ -266,6 +266,7 @@ def potential_matrix(kx_matrix, ky_matrix, dk2, epsilon, r_0, N_submesh, submesh
 
     return V_main
 
+@njit
 def include_deltas(V_RK, Values, Vectors, N_submesh):
     """
     Once potential matrix [V(k-k')] is available one can add the 'mixing'
@@ -280,7 +281,7 @@ def include_deltas(V_RK, Values, Vectors, N_submesh):
 
     S = len(cond_v) * len(vale_v) # This is the amount of combinations of conduction and valence bands
     Z,_ = V_RK.shape # number of points in reciprocal space
-    W_ND = np.zeros((S*Z,S*Z), dtype=complex) # initiate an empty matrix
+    W_ND = 1j * np.zeros((S*Z,S*Z)) # initiate an empty matrix
 
     ## If the 'submesh-strategy' is not being used  we need to avoid
     ## the diagonal elements. When the 'correction' is True (or 1), this
