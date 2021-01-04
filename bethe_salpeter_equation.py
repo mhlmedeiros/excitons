@@ -187,8 +187,7 @@ def include_deltas(V_RK, Values, Vectors, N_submesh):
             if k1 != k2:
                 # FOR NON-DIAGONAL BLOCKS:
                 W_ND[k2*S:(k2+1)*S, k1*S:(k1+1)*S] = Dk1k2.T.conj()
-
-                return W_ND
+    return W_ND
 
 
 # ============================================================================= #
@@ -448,15 +447,9 @@ def main():
         # Defining the potential
         V = ham.Rytova_Keldysh(dk2=dk2, r_0=r_0, epsilon=epsilon_eff)
 
-        ### THE BETHE-SALPETER EQUATION:
-
-        # MATRIX CONSTRUCTION:
+        ### THE BETHE-SALPETER MATRIX CONSTRUCTION:
         print("\tBuilding Potential matrix (Nk x Nk)... ")
         V_kk = potential_matrix(V, Kx, Ky, N_submesh, submesh_radius=submesh_limit)
-
-        with open('test_Vkk_with_class.npy','wb') as f:
-            np.save(f, V_kk)
-
 
         print("\tIncluding 'mixing' terms (Deltas)... ")
         W_non_diag = include_deltas(V_kk, Values3D, Vectors4D, N_submesh)
