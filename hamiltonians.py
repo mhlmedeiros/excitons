@@ -127,7 +127,6 @@ class H4x4_general:
             return H
 
 #===============================================================================
-
 fields2x2 = [
     ('alphac', float32),
     ('alphav', float32),
@@ -197,6 +196,33 @@ class H4x4_equal(H4x4_general):
         self.valeBands = 2
         self.condBands = 2
 
+#===============================================================================
+fieldsRytova = [
+    ('dk2', float32),
+    ('r_0', float32),
+    ('epsilon', float32),
+]
+
+@jitclass(fieldsRytova)
+class Rytova_Keldysh:
+
+    def __init__(self, dk2, r_0, epsilon):
+        self.dk2 = dk2
+        self.r_0 = r_0
+        self.epsilon = epsilon
+
+    def call(self, q):
+        """
+        The "pontual" version of the function in Wannier script.
+        Instead of return the whole matrix this function returns
+        only the value asked.
+        """
+        dk2, epsilon, r_0 = self.dk2, self.epsilon, self.r_0
+        Vkk_const = 1e6/(2*EPSILON_0)
+        V =  1/(epsilon*q + r_0*q**2)
+        return - Vkk_const * dk2/(2*np.pi)**2 * V
+
+#===============================================================================
 @njit
 def values_and_vectors(hamiltonian, kx_matrix, ky_matrix):
     """
@@ -233,19 +259,26 @@ def eig_vals_vects(H, W, V, Kx, Ky):
             W[i,j,:], V[i,j,:,:] = LA.eigh(H.call(Kx[i,j], Ky[i,j]))
     return W,V
 
+
 def main():
-    # print(eig_vals(H))
-    # k = np.linspace(-1,1,10)
-    # Kx, Ky = np.meshgrid(k,k)
+    k = np.linspace(-1,1,10)
+    dk2 = (k[1] - k[0])**2
+    Kx, Ky = np.meshgrid(k,k)
+
     # eigenvalues, eigenvectors = values_and_vectors(H,Kx,Ky)
+    # print(eig_vals(H))
     # print(eigenvalues)
-    alphac = 0
-    alphav = 0
-    E_gap = 2.4e3 # meV ~ 2.4 eV
-    gamma = 2.6e2 # meV*nm ~ 2.6 eV*AA
-    H4 = H4x4(alphac, alphav, E_gap, gamma, alphac, alphav, E_gap, gamma)
-    H2 = H2x2(alphac, alphav, E_gap, gamma)
-    print(H2.call(0,0))
+    # alphac = 0
+    # alphav = 0
+    # E_gap = 2.4e3 # meV ~ 2.4 eV
+    # gamma = 2.6e2 # meV*nm ~ 2.6 eV*AA
+    # H4 = H4x4(alphac, alphav, E_gap, gamma, alphac, alphav, E_gap, gamma)
+    # H2 = H2x2(alphac, alphav, E_gap, gamma)
+    # print(H2.call(0,0))
+
+
+
+
 
 
 
