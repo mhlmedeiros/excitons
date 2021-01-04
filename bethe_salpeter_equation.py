@@ -445,7 +445,7 @@ def include_X(Values, Vectors):
                 # TODO: X-MATRIX IS SYMMETRIC OR HERMITIAN?
                 X[k2*S:(k2+1)*S, k1*S:(k1+1)*S] = X_k1k2_block.T.conj()
 
-    return W_ND
+    return X
 
 
 
