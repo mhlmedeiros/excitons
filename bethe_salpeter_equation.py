@@ -469,10 +469,10 @@ def main():
     # ========================================================================= #
     ##    Choose the number of discrete points to investigate the convergence:
     # ========================================================================= #
-    min_points = 101
-    max_points = 101
-    N_submesh = 1001
-    submesh_limit = 4 # units of Delta_k (square lattice)
+    min_points = 41
+    max_points = 41
+    N_submesh = 101
+    submesh_limit = 1 # units of Delta_k (square lattice)
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
 
