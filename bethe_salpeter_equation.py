@@ -416,8 +416,8 @@ def main():
     # ========================================================================= #
     min_points = 41
     max_points = 41
-    N_submesh = 101
-    submesh_limit = 1 # units of Delta_k (square lattice)
+    N_submesh = 11
+    submesh_limit = 0 # units of Delta_k (square lattice)
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
 
@@ -453,6 +453,10 @@ def main():
         # MATRIX CONSTRUCTION:
         print("\tBuilding Potential matrix (Nk x Nk)... ")
         V_kk = potential_matrix(V, Kx, Ky, N_submesh, submesh_radius=submesh_limit)
+
+        with open('test_Vkk_with_class.npy','wb') as f:
+            np.save(f, V_kk)
+
 
         print("\tIncluding 'mixing' terms (Deltas)... ")
         W_non_diag = include_deltas(V_kk, Values3D, Vectors4D, N_submesh)
