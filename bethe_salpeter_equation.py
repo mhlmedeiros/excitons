@@ -151,124 +151,40 @@ def delta_k1k2(k1_ind, k2_ind, Vectors, Values):
 
     return Delta_k1_k2.reshape(cond_n*vale_n, cond_n*vale_n)
 
-# ============================================================================= #
-##                              BSE - Exchange term:
-# ============================================================================= #
-def fancy_product(v1, v2):
+@njit
+def include_deltas(V_RK, Values, Vectors, N_submesh):
     """
-    This function takes two arrays as input and return a special
-    matrix produt:
-        - one of the arrays (1D or 2D) has vectors (2D or 3D) as entries
-        - while the other iput has to be a 1D array with numbers as entries
+    Once potential matrix [V(k-k')] is available one can add the 'mixing'
+    term. This mixing term is defined for every c-c' and v-v' pairs
+    and also for every k-k' combination:
 
-        DOESN'T MATTER THE ORDER OF THE INPUTS PROVIDED ONE
-        OF THEM IS 1D-ARRAY WITH NUMERIC ENTRIES WHILE THE
-        OTHER IS A MATRIX OR A VECTOR OF VECTORS.
-
-
-    ---------------------------------------------------------------------------
-    When both arrays are 1 dimensional, we'll have a inner product, which will
-    result in a vector with the same dimesion of the components of the input of
-    bigger rank:
-
-    >> v1 = np.array([[1,0,0],[0,1,0]])
-    >> v2 = np.array([1,2])
-    >> fancy_product(v1,v2)
-    array([1,2,0])
-
-    ---------------------------------------------------------------------------
-    Now, if one of the arrays is a matrix, we'll have a matrix product, which
-    will result in a vector with vectors as the components:
-
-    >> v1 = np.array([
-    ...             [[1,0,0],[0,0,0],[0,0,0]],
-    ...             [[0,0,0],[0,1,0],[0,0,0]],
-    ...             [[0,0,0],[0,0,0],[0,0,1]]
-    ...             ])
-    >> v2 = np.array([1,2,3])
-    >> fancy_product(v1,v2)
-    array([[1,0,0],[0,2,0],[0,0,3]])
+    Delta([c,v,k],[c',v',k']) = < c,k |c',k'> * <v',k'|v,k >
 
     """
-    rank_1, rank_2 = len(v1.shape), len(v2.shape)
-    operador, operando = (v1, v2) if (rank_1 > rank_2) else (v2, v1)
-    operador_rank = len(operador.shape)
+    # It is crucial to know how many conduction and valence bands we have:
+    cond_v, vale_v = split_values(Values[0,0,:]) # Just to set the size of the holder matrix
 
-    # Decide which of the inputs is the "operator"
-    if operador_rank == 3:
-        nrows, ncolumns, versor_dim = operador.shape
-    elif operador_rank == 2:
-        nrows, ncolumns, versor_dim = (1, *operador.shape)
+    S = len(cond_v) * len(vale_v) # This is the amount of combinations of conduction and valence bands
+    Z,_ = V_RK.shape # number of points in reciprocal space
+    W_ND = 1j * np.zeros((S*Z,S*Z)) # initiate an empty matrix
 
-    rows = range(nrows)
-    columns = range(ncolumns)
+    ## If the 'submesh-strategy' is not being used  we need to avoid
+    ## the diagonal elements. When the 'correction' is True (or 1), this
+    ## avoidance is implemented in the nested for-loop below.
+    correction = (N_submesh == None)
 
-    result = 1j * np.zeros((nrows, versor_dim))
+    ## NON-DIAGONAL && DIAGONAL BLOCKS (if correction == False):
+    for k1 in range(Z - correction):
+        for k2 in range(k1 + correction, Z):
+            # THE DELTAS CAN BE MATRICES, IT DEPENDS ON THE HAMILTONIAN MODEL:
+            delta = delta_k1k2(k1, k2, Vectors, Values)
+            Dk1k2 = delta * V_RK[k1, k2] # USE THIS ONE WITH
+            W_ND[k1*S:(k1+1)*S, k2*S:(k2+1)*S] = Dk1k2
+            if k1 != k2:
+                # FOR NON-DIAGONAL BLOCKS:
+                W_ND[k2*S:(k2+1)*S, k1*S:(k1+1)*S] = Dk1k2.T.conj()
 
-    for n in rows:
-        for m in columns:
-            result[n] += operador[n,m] * operando[m] if operador_rank == 3 else operador[m] * operando[m]
-    return result if operador_rank == 3 else result[0]
-
-def X_k1k2_cv(k1_ind, k2_ind, c1_ind, c2_ind, v1_ind, v2_ind, Pi_matrix, Vectors_flattened, Values_flattened):
-    """
-    # TODO: DOC STRING
-    """
-    c1_k1 = Vectors_flattened[k1_ind,:,c1_ind] # c-state
-    c2_k2 = Vectors_flattened[k2_ind,:,c2_ind] # c'-state
-    v1_k1 = Vectors_flattened[k1_ind,:,v1_ind] # v-state
-    v2_k2 = Vectors_flattened[k2_ind,:,v2_ind] # v'-state
-    E_cv   = Values_flattened[k1_ind,c1_ind] - Values_flattened[k1_ind,v1_ind]
-    E_vc_p = Values_flattened[k2_ind,v2_ind] - Values_flattened[k2_ind,c2_ind]
-    c_Pi_v   = (1/E_cv) * fancy_product(c1_k1.conj(), fancy_product(Pi_matrix, v1_k1))[0]
-    vp_Pi_cp = (1/E_cv_p) * fancy_product(v2_k2.conj(), fancy_product(Pi_matrix, c2_k2))[0]
-    return c_Pi_v.dot(vp_Pi_cp)
-
-def X_k1k2(Vectors, Values, r_0, d):
-    """
-    # TODO: DOC STRING
-    """
-    # To know how many conduction and valence bands we have
-    # I SUPPOSE IT WILL BE FIXED OVER THE WHOLE RECIPROCAL SPACE
-
-    cond_vs, vale_vs = split_values(Values[0,0,:])
-    cond_n = len(cond_vs)
-    vale_n = len(vale_vs)
-
-    X_k1_k2 = 1j * np.zeros((cond_n*vale_n)**2)
-
-    nkx, nky, nstates = Values.shape # nkx -> kx-points; nky -> ky -> points; nstates -> # of eigenvalues
-    V_flat = Vectors.reshape(nkx*nky, nstates, nstates)
-    W_flat = Values.reshape(nkx*nky, nstates)
-
-    # The order of the values is always from the smallest to the largest
-    # Remember that the smallest value for conduction bands is also the closest
-    # one of the gap among all the conduction states
-    # On the other hand, the largest valence band is the closest of the gap
-    # among valence bands.
-    cond_inds = list(range(cond_n))
-    vale_inds = list(range(-1,-1*(vale_n+1),-1))
-
-    #===================================================================#
-    #                       main loop of this function:                 #
-    #===================================================================#
-    ## TO USE 'NUMBA COMPILATION IN THIS FUNCTION WE CAN'T USE 'itertools'
-    n = 0
-    for v in vale_inds:
-        for c in cond_inds:
-            for vl in vale_inds:
-                for cl in cond_inds:
-                    X_k1_k2[n] = X_k1k2_cv(k1_ind, k2_ind,
-                                            c, cl, v, vl,
-                                            Pi_matrix, V_flat, W_flat)
-                    n += 1
-
-    # ================================================================= #
-    epsilon_m = 2 * r_0/d
-    int_laplacian_V = - 1e6/(EPSILON_0 * epsilon_m)
-
-    return int_laplacian_V * X_k1_k2.reshape(cond_n*vale_n, cond_n*vale_n)
-
+    return W_ND
 
 # ============================================================================= #
 ##                              Rytova-Keldysh:
@@ -356,10 +272,6 @@ def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, epsilon, r_0, N_submesh, 
     # plt.imshow(M_complete)
     return M_complete
 
-
-# ============================================================================= #
-##                     Rytova-Keldysh, Deltas and Exchange:
-# ============================================================================= #
 def potential_matrix(kx_matrix, ky_matrix, dk2, epsilon, r_0, N_submesh, submesh_radius=0):
     """
     This function generates a square matrix that contains the values of
@@ -384,43 +296,137 @@ def potential_matrix(kx_matrix, ky_matrix, dk2, epsilon, r_0, N_submesh, submesh
 
     return V_main
 
+# ============================================================================= #
+##                              BSE - Exchange term:
+# ============================================================================= #
 @njit
-def include_deltas(V_RK, Values, Vectors, N_submesh):
-    """
-    Once potential matrix [V(k-k')] is available one can add the 'mixing'
-    term. This mixing term is defined for every c-c' and v-v' pairs
-    and also for every k-k' combination:
+def fancy_inner_product(v1, v2):
+    ncolumns, versor_dim = v2.shape
 
-    Delta([c,v,k],[c',v',k']) = < c,k |c',k'> * <v',k'|v,k >
+    columns = range(ncolumns)
+    result = 1j * np.zeros((1, versor_dim))
 
-    """
-    # It is crucial to know how many conduction and valence bands we have:
-    cond_v, vale_v = split_values(Values[0,0,:]) # Just to set the size of the holder matrix
+    for m in columns:
+        result += v1[m] * v2[m]
 
-    S = len(cond_v) * len(vale_v) # This is the amount of combinations of conduction and valence bands
-    Z,_ = V_RK.shape # number of points in reciprocal space
-    W_ND = 1j * np.zeros((S*Z,S*Z)) # initiate an empty matrix
-
-    ## If the 'submesh-strategy' is not being used  we need to avoid
-    ## the diagonal elements. When the 'correction' is True (or 1), this
-    ## avoidance is implemented in the nested for-loop below.
-    correction = (N_submesh == None)
-
-    ## NON-DIAGONAL && DIAGONAL BLOCKS (if correction == False):
-    for k1 in range(Z - correction):
-        for k2 in range(k1 + correction, Z):
-            # THE DELTAS CAN BE MATRICES, IT DEPENDS ON THE HAMILTONIAN MODEL:
-            delta = delta_k1k2(k1, k2, Vectors, Values)
-            Dk1k2 = delta * V_RK[k1, k2] # USE THIS ONE WITH
-            W_ND[k1*S:(k1+1)*S, k2*S:(k2+1)*S] = Dk1k2
-            if k1 != k2:
-                # FOR NON-DIAGONAL BLOCKS:
-                W_ND[k2*S:(k2+1)*S, k1*S:(k1+1)*S] = Dk1k2.T.conj()
-
-    return W_ND
+    return result[0]
 
 @njit
-def include_X(Values, Vectors):
+def fancy_matrix_product(M, v):
+    """
+    This function takes two arrays as input and return a special
+    matrix produt:
+        - one of the arrays (1D or 2D) has vectors (2D or 3D) as entries
+        - while the other iput has to be a 1D array with numbers as entries
+
+        DOESN'T MATTER THE ORDER OF THE INPUTS PROVIDED ONE
+        OF THEM IS 1D-ARRAY WITH NUMERIC ENTRIES WHILE THE
+        OTHER IS A MATRIX OR A VECTOR OF VECTORS.
+
+
+    ---------------------------------------------------------------------------
+    When both arrays are 1 dimensional, we'll have a inner product, which will
+    result in a vector with the same dimesion of the components of the input
+    of bigger rank:
+
+    >> v1 = np.array([[1,0,0],[0,1,0]])
+    >> v2 = np.array([1,2])
+    >> fancy_product(v1,v2)
+    array([1,2,0])
+
+    ---------------------------------------------------------------------------
+    Now, if one of the arrays is a matrix, we'll have a matrix product, which
+    will result in a vector with vectors as the components:
+
+    >> v1 = np.array([
+    ...             [[1,0,0],[0,0,0],[0,0,0]],
+    ...             [[0,0,0],[0,1,0],[0,0,0]],
+    ...             [[0,0,0],[0,0,0],[0,0,1]]
+    ...             ])
+    >> v2 = np.array([1,2,3])
+    >> fancy_product(v1,v2)
+    array([[1,0,0],[0,2,0],[0,0,3]])
+
+    """
+    nrows, ncolumns, versor_dim = M.shape
+
+    rows = range(nrows)
+    columns = range(ncolumns)
+    result = 1j * np.zeros((nrows, versor_dim))
+
+    for n in rows:
+        for m in columns:
+            result[n] += M[n,m] * v[m]
+
+    return result
+
+@njit
+def X_k1k2(k1_ind, k2_ind, Vectors, Values, r_0, d, Pi_matrix):
+    """
+    # TODO: DOC STRING
+    """
+    # To know how many conduction and valence bands we have
+    # I SUPPOSE IT WILL BE FIXED OVER THE WHOLE RECIPROCAL SPACE
+
+    cond_vs, vale_vs = split_values(Values[0,0,:])
+    cond_n = len(cond_vs)
+    vale_n = len(vale_vs)
+
+    X_k1_k2 = 1j * np.zeros((cond_n*vale_n)**2)
+
+    nkx, nky, nstates = Values.shape # nkx -> kx-points; nky -> ky -> points; nstates -> # of eigenvalues
+    V_flat = Vectors.reshape(nkx*nky, nstates, nstates)
+    W_flat = Values.reshape(nkx*nky, nstates)
+
+    # The order of the values is always from the smallest to the largest
+    # Remember that the smallest value for conduction bands is also the closest
+    # one of the gap among all the conduction states
+    # On the other hand, the largest valence band is the closest of the gap
+    # among valence bands.
+    cond_inds = list(range(cond_n))
+    vale_inds = list(range(-1,-1*(vale_n+1),-1))
+
+    #===================================================================#
+    #                       main loop of this function:                 #
+    #===================================================================#
+    ## TO USE 'NUMBA COMPILATION IN THIS FUNCTION WE CAN'T USE 'itertools'
+    n = 0
+    for v in vale_inds:
+        for c in cond_inds:
+            for vl in vale_inds:
+                for cl in cond_inds:
+                    X_k1_k2[n] = X_k1k2_cv(k1_ind, k2_ind,
+                                            c, cl, v, vl,
+                                            Pi_matrix, V_flat, W_flat)
+                    n += 1
+
+    # ================================================================= #
+    epsilon_m = 2 * r_0/d
+    int_laplacian_V = - 1e6/(EPSILON_0 * epsilon_m)
+
+    return int_laplacian_V * X_k1_k2.reshape(cond_n*vale_n, cond_n*vale_n)
+
+@njit
+def X_k1k2_cv(k1_ind, k2_ind, c1_ind, c2_ind, v1_ind, v2_ind, Pi_matrix, Vectors_flattened, Values_flattened):
+    """
+    # TODO: DOC STRING
+    """
+    c1_k1 = Vectors_flattened[k1_ind,:,c1_ind] # c-state
+    c2_k2 = Vectors_flattened[k2_ind,:,c2_ind] # c'-state
+    v1_k1 = Vectors_flattened[k1_ind,:,v1_ind] # v-state
+    v2_k2 = Vectors_flattened[k2_ind,:,v2_ind] # v'-state
+    #
+    E_cv   = Values_flattened[k1_ind,c1_ind] - Values_flattened[k1_ind,v1_ind]
+    E_vc_p = Values_flattened[k2_ind,v2_ind] - Values_flattened[k2_ind,c2_ind]
+    #
+    c_Pi_v   = (1/E_cv) * fancy_inner_product(c1_k1.conj(), fancy_matrix_product(Pi_matrix, v1_k1))
+    vp_Pi_cp = (1/E_vc_p) * fancy_inner_product(v2_k2.conj(), fancy_matrix_product(Pi_matrix, c2_k2))
+    #
+#     print(c_Pi_v.shape, vp_Pi_cp.shape)
+    return c_Pi_v.dot(vp_Pi_cp)
+
+@njit
+def include_X(Values, Vectors, r_0, d, Pi_matrix):
     """
     # TODO: Write a doc string
     """
@@ -437,8 +443,9 @@ def include_X(Values, Vectors):
     for k1 in range(Z):
         for k2 in range(k1, Z):
             # THE DIMENSIONS OF THE X_k1k2 DEPENDS ON THE HAMILTONIAN MODEL:
-            X_k1k2_block = X_k1k2(k1, k2, Vectors, Values)
+            X_k1k2_block = X_k1k2(k1, k2, Vectors, Values, r_0, d, Pi_matrix)
             X[k1*S:(k1+1)*S, k2*S:(k2+1)*S] = X_k1k2_block
+            # if k1 == 0 and k2 == 1 : print(X_k1k2_block)
             if k1 != k2:
                 # FOR NON-DIAGONAL BLOCKS:
                 # TODO: CONFIRM IF THE ENTRIES OF THE MATRIX ARE COMPLEX
@@ -446,8 +453,6 @@ def include_X(Values, Vectors):
                 X[k2*S:(k2+1)*S, k1*S:(k1+1)*S] = X_k1k2_block.T.conj()
 
     return X
-
-
 
 # ============================================================================= #
 ##                              Visualization:
@@ -479,8 +484,8 @@ def main():
     r0_chosen = 4.51 # nm (WSe2)
 
     ## PAULO'S TEST:
-    gamma =  3.91504469e2# meV*nm ~ 2.6 eV*AA
-    Egap = 1311.79 # meV ~ 2.4 eV
+    gamma =  3.91504469e2# meV*nm
+    Egap = 1311.79 # meV 2.4 eV
 
     epsilon_eff = 1
     alpha_choice = 0
@@ -534,19 +539,43 @@ def main():
         # this artificial gap prevent this problem.
         Egap = 1e-5
 
+    #==================#
     # HAMILTONIAN PARAMS
+    #==================#
     hamiltonian_params = dict(E_gap=Egap, Alpha_c=alphac,
                              Alpha_v=alphav, Gamma=gamma)
-
+    #=================#
     # POTENTIAL PARAMS
+    #=================#
     epsilon = epsilon_eff
     r_0 = r0_chosen
+
+    #================#
+    # EXCHANGE PARAMS
+    #================#
+    d_chosen = 6
+    p = 1/np.sqrt(1) * np.array([1, 1j])
+    m = 1/np.sqrt(1) * np.array([1,-1j])
+    O = np.array([0,0])
+
+    Pi4x4 = gamma * np.array([
+        [O,p,O,O],
+        [m,O,O,O],
+        [O,O,O,p],
+        [O,O,m,O]
+    ])
+
+    Pi2x2 = gamma * np.array([
+        [O,p],
+        [m,O]
+    ]) # 👍
+
 
     # ========================================================================= #
     ##                          Define the Hamiltonian:
     # ========================================================================= #
-    # hamiltonian = ham.H4x4_equal(alphac, alphav, Egap, gamma) # 👍
-    hamiltonian = ham.H2x2(alphac, alphav, Egap, gamma) # 👍
+    hamiltonian = ham.H4x4_equal(alphac, alphav, Egap, gamma) # 👍
+    # hamiltonian = ham.H2x2(alphac, alphav, Egap, gamma) # 👍
 
 
     # ========================================================================= #
@@ -601,11 +630,14 @@ def main():
         print("\tIncluding 'mixing' terms (Deltas)... ")
         W_non_diag = include_deltas(V_kk, Values3D, Vectors4D, N_submesh)
 
+        print("\tIncluding Exchange term...")
+        # X_term = dk2/(2*np.pi)**2 * include_X(Values3D, Vectors4D, r_0, d_chosen, Pi4x4)
+        X_term = 0
+
         print("\tIncluding 'pure' diagonal elements..")
         W_diag = diagonal_elements(Values3D)
-        W_total = W_diag + W_non_diag
 
-        return W_total
+        return W_diag + W_non_diag + X_term
 
     @st_time
     def diagonalize_bse(BSE_MATRIX):
@@ -665,7 +697,7 @@ def main():
         # plt.show()
         # state_preview = 0
         # plot_wave_function(eigvecs_holder, state_preview)
-        number_of_energies_to_show = 15
+        number_of_energies_to_show = 30
         for val_index in range(number_of_energies_to_show):
             print("\t%i\t|\t%.2f" % (val_index, values[val_index]-Egap))
 
