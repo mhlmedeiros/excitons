@@ -389,15 +389,22 @@ def main():
     # mv = -0.3636 # M_0
     # gamma = 2.6e2 # meV*nm ~ 2.6 eV*AA
     # Egap = 2.4e3 # meV ~ 2.4 eV
-    r0_chosen = 4.51 # nm (WSe2)
+
 
     ## PAULO'S TEST:
-    gamma =  3.91504469e2# meV*nm ~ 2.6 eV*AA
-    Egap = 1311.79 # meV ~ 2.4 eV
+    # gamma =  3.91504469e2 # meV*nm ~ 2.6 eV*AA
+    # Egap = 1311.79 # meV ~ 2.4 eV
+    # r0_chosen = 4.51 # nm (WSe2)
 
+    ## TEST OF ABSORPTION
+    r0_chosen = 5.0 # nm
+    Egap = 1e3 # meV
+    gamma = 0
+    mc = 0.2
+    mv = -0.4
 
     epsilon_eff = 1
-    alpha_choice = 0
+    alpha_choice = 1
 
     alpha_options = ['zero', 'masses', 'corrected']
     # alpha_choice = int((input('''Enter the 'alphas-choice'(0/1/2):
@@ -469,17 +476,17 @@ def main():
     # ========================================================================= #
     ##    Choose the number of discrete points to investigate the convergence:
     # ========================================================================= #
-    min_points = 41
-    max_points = 41
+    min_points = 101
+    max_points = 101
     N_submesh = 101
-    submesh_limit = 1 # units of Delta_k (square lattice)
+    submesh_limit = 1000 # units of Delta_k (square lattice)
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
 
     # ========================================================================= #
     ##              Matrices to hold the eigenvalues and the eigenvectors:
     # ========================================================================= #
-    number_of_recorded_states = 100
+    number_of_recorded_states = max_points**2
     eigvals_holder = np.zeros((number_of_recorded_states, len(n_points), len(L_values)))
     eigvecs_holder = np.zeros((max_points**2, number_of_recorded_states, len(L_values)),dtype=complex)
 
