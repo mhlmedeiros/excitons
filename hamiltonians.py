@@ -1,14 +1,10 @@
 
-
 import numpy as np
 import numpy.linalg as LA
+import physical_constants as const
 from numba import jit, njit, int32, float32
 from numba.experimental import jitclass
 
-EPSILON_0 = 55.26349406             # e^2 GeV^{-1}fm^{-1} == e^2 (1e9 eV 1e-15 m)^{-1}
-HBAR = 1.23984193/(2*np.pi)         # eV 1e-6 m/c
-M_0  = 0.51099895000                # MeV/c^2
-hbar2_over2m = HBAR**2/(2*M_0)*1e3  # meV nm^2
 
 #===============================================================================
 # NOTE THAT WE CANNOT INHERITATE FROM A "jitclass".
@@ -120,10 +116,10 @@ class H4x4_general:
             gamma_up, gamma_down = self.gamma_up, self.gamma_down
             k2 = kx**2 + ky**2
             H = np.array([
-            [Eg_up + hbar2_over2m * alpha_c_up * k2, gamma_up*(kx+1j*ky), 0 , 0],
-            [gamma_up*(kx-1j*ky), hbar2_over2m * alpha_v_up * k2, 0, 0],
-            [0, 0, Eg_down + hbar2_over2m * alpha_c_down * k2, gamma_down*(kx+1j*ky)],
-            [0, 0, gamma_down*(kx-1j*ky), hbar2_over2m * alpha_v_down * k2]])
+            [Eg_up + const.hbar2_over2m * alpha_c_up * k2, gamma_up*(kx+1j*ky), 0 , 0],
+            [gamma_up*(kx-1j*ky), const.hbar2_over2m * alpha_v_up * k2, 0, 0],
+            [0, 0, Eg_down + const.hbar2_over2m * alpha_c_down * k2, gamma_down*(kx+1j*ky)],
+            [0, 0, gamma_down*(kx-1j*ky), const.hbar2_over2m * alpha_v_down * k2]])
             return H
 
 #===============================================================================
@@ -153,8 +149,8 @@ class H2x2:
         Gamma = self.gamma
         k2 = kx**2 + ky**2
         H = np.array([
-            [E_gap + hbar2_over2m * Alpha_c * k2, Gamma*(kx+1j*ky)],
-            [Gamma*(kx-1j*ky), hbar2_over2m * Alpha_v * k2]])
+            [E_gap + const.hbar2_over2m * Alpha_c * k2, Gamma*(kx+1j*ky)],
+            [Gamma*(kx-1j*ky), const.hbar2_over2m * Alpha_v * k2]])
         return H
 
 #===============================================================================
@@ -205,7 +201,6 @@ fieldsRytova = [
 
 @jitclass(fieldsRytova)
 class Rytova_Keldysh:
-
     def __init__(self, dk2, r_0, epsilon):
         self.dk2 = dk2
         self.r_0 = r_0
@@ -218,10 +213,9 @@ class Rytova_Keldysh:
         only the value asked.
         """
         dk2, epsilon, r_0 = self.dk2, self.epsilon, self.r_0
-        Vkk_const = 1e6/(2*EPSILON_0)
+        Vkk_const = 1e6/(2*const.EPSILON_0)
         V =  1/(epsilon*q + r_0*q**2)
         return - Vkk_const * dk2/(2*np.pi)**2 * V
-
 
 @njit
 def potential_average(V, k_vec_diff, N_submesh, submesh_radius):
