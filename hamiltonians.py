@@ -5,6 +5,7 @@ import physical_constants as const
 from numba import jit, njit, int32, float32
 from numba.experimental import jitclass
 
+list_of_hamiltonians = ['H2x2','H4x4','H4x4_equal']
 
 #===============================================================================
 # NOTE THAT WE CANNOT INHERITATE FROM A "jitclass".
@@ -105,22 +106,22 @@ class H4x4_general:
         self.condBands = 2
 
     def call(self, kx, ky):
-            """
-            To be used as a parent class for "jit-classes" we cannot define
-            the parent class with a '__call__' method. Instead, we define a
-            simple method named 'call' that needs to be called explicitly.
-            """
-            Eg_up, Eg_down = self.gap_up, self.gap_down
-            alpha_c_up, alpha_c_down = self.alphac_up, self.alphac_down
-            alpha_v_up, alpha_v_down = self.alphav_up, self.alphav_down
-            gamma_up, gamma_down = self.gamma_up, self.gamma_down
-            k2 = kx**2 + ky**2
-            H = np.array([
-            [Eg_up + const.hbar2_over2m * alpha_c_up * k2, gamma_up*(kx+1j*ky), 0 , 0],
-            [gamma_up*(kx-1j*ky), const.hbar2_over2m * alpha_v_up * k2, 0, 0],
-            [0, 0, Eg_down + const.hbar2_over2m * alpha_c_down * k2, gamma_down*(kx+1j*ky)],
-            [0, 0, gamma_down*(kx-1j*ky), const.hbar2_over2m * alpha_v_down * k2]])
-            return H
+        """
+        To be used as a parent class for "jit-classes" we cannot define
+        the parent class with a '__call__' method. Instead, we define a
+        simple method named 'call' that needs to be called explicitly.
+        """
+        Eg_up, Eg_down = self.gap_up, self.gap_down
+        alpha_c_up, alpha_c_down = self.alphac_up, self.alphac_down
+        alpha_v_up, alpha_v_down = self.alphav_up, self.alphav_down
+        gamma_up, gamma_down = self.gamma_up, self.gamma_down
+        k2 = kx**2 + ky**2
+        H = np.array([
+        [Eg_up + const.hbar2_over2m * alpha_c_up * k2, gamma_up*(kx+1j*ky), 0 , 0],
+        [gamma_up*(kx-1j*ky), const.hbar2_over2m * alpha_v_up * k2, 0, 0],
+        [0, 0, Eg_down + const.hbar2_over2m * alpha_c_down * k2, gamma_down*(kx+1j*ky)],
+        [0, 0, gamma_down*(kx-1j*ky), const.hbar2_over2m * alpha_v_down * k2]])
+        return H
 
 #===============================================================================
 fields2x2 = [
@@ -177,6 +178,11 @@ class H4x4(H4x4_general):
 
 @jitclass(fields4x4)
 class H4x4_equal(H4x4_general):
+    """
+    Concrete class: instantiable version of 'H4x4_general'.
+    The difference between this class and the 'H4x4' is that
+    here the spin-up and spin-down blocks are identical.
+    """
     def __init__(self, alphac, alphav, gap, gamma):
         ## SPIN-UP:
         self.alphac_up = alphac
