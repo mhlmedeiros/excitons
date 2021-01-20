@@ -39,6 +39,10 @@ def split_values(values_array):
     valence_values = [value for value in values_array if value <= 0]
     return conduction_values, valence_values
 
+# ============================================================================= #
+##              BSE-Matrix Diagonal elements (no potential nor exchange):
+# ============================================================================= #
+
 def diagonal_elements(Values):
     """
     Function tha returns a diagonal matrix which has the elements defined as
@@ -80,7 +84,7 @@ def diagonal_elements(Values):
     return W_diag_matrix
 
 # ============================================================================= #
-##                              Deltas (Mixing):
+##              Deltas (Mixing):
 # ============================================================================= #
 @njit
 def delta_k1k2_cv(k1_ind, k2_ind, c1_ind, c2_ind, v1_ind, v2_ind, Vectors_flattened):
@@ -183,25 +187,14 @@ def include_deltas(V_RK, Values, Vectors, N_submesh):
             if k1 != k2:
                 # FOR NON-DIAGONAL BLOCKS:
                 W_ND[k2*S:(k2+1)*S, k1*S:(k1+1)*S] = Dk1k2.T.conj()
-
     return W_ND
 
-# ============================================================================= #
-##                              Rytova-Keldysh:
-# ============================================================================= #
-@njit
-def rytova_keldysh_pontual(q, dk2, epsilon, r_0):
-    """
-    The "pontual" version of the function in Wannier script.
-    Instead of return the whole matrix this function returns
-    only the value asked.
-    """
-    Vkk_const = 1e6/(2*EPSILON_0)
-    V =  1/(epsilon*q + r_0*q**2)
-    return - Vkk_const * dk2/(2*np.pi)**2 * V
 
+# ============================================================================= #
+##              Rytova-Keldysh:
+# ============================================================================= #
 @njit
-def rytova_keldysh_average(k_vec_diff, dk2, epsilon, r_0, N_submesh, submesh_radius):
+def potential_average(V, k_vec_diff, N_submesh, submesh_radius):
     """
     As we've been using a square lattice, we can use
     * w_x_array == w_y_array -> w_array
@@ -209,11 +202,14 @@ def rytova_keldysh_average(k_vec_diff, dk2, epsilon, r_0, N_submesh, submesh_rad
     * where: dw = sqrt(dk2)
     """
     k_diff_norm = np.sqrt(k_vec_diff[0]**2 + k_vec_diff[1]**2)
-    dk = np.sqrt(dk2)
+    dk = np.sqrt(V.dk2)
     threshold = submesh_radius * dk
 
+    # print('threshold: ', threshold)
+    # print('k_diff: ', k_diff_norm)
+
     if N_submesh==None or k_diff_norm > threshold:
-        Potential_value = rytova_keldysh_pontual(k_diff_norm, dk2, epsilon, r_0)
+        Potential_value = V.call(k_diff_norm)
     else:
         # THIS BLOCK WILL RUN ONLY IF "k_diff_norm" IS EQUAL OR SMALLER
         # THAN A LIMIT, DENOTED HERE BY "threshold":
@@ -225,17 +221,15 @@ def rytova_keldysh_average(k_vec_diff, dk2, epsilon, r_0, N_submesh, submesh_rad
                 w_vec = np.array([wx, wy])
                 q_vec = k_vec_diff + w_vec
                 q = np.linalg.norm(q_vec)
-                if q == 0:
-                    number_of_sing_points += 1
-                    continue; # skip singularities
-                Potential_value += rytova_keldysh_pontual(q, dk2, epsilon, r_0)
+                if q == 0: number_of_sing_points += 1; continue; # skip singularities
+                Potential_value += V.call(q)
         if number_of_sing_points != 0 :
             print("\t\t\tFor k-k' = ", k_vec_diff ," the number of singular points was ", number_of_sing_points)
         Potential_value = Potential_value/(N_submesh**2 - number_of_sing_points)
     return Potential_value
 
 @njit
-def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, epsilon, r_0, N_submesh, submesh_radius):
+def smart_potential_matrix(V, kx_flat, ky_flat, N_submesh, submesh_radius):
     """
     CONSIDERING A SQUARE K-SPACE GRID:
 
@@ -259,7 +253,7 @@ def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, epsilon, r_0, N_submesh, 
             k1_vec = np.array([kx_flat[k1_ind], ky_flat[k1_ind]])
             k2_vec = np.array([kx_flat[k2_ind], ky_flat[k2_ind]])
             k_diff = k1_vec - k2_vec
-            M_first_rows[k1_ind, k2_ind] = rytova_keldysh_average(k_diff, dk2, epsilon, r_0, N_submesh, submesh_radius)
+            M_first_rows[k1_ind, k2_ind] = potential_average(V, k_diff, N_submesh, submesh_radius)
 
     print("\t\tOrganizing the the calculated values...")
     M_complete[:n_first_row_k,:] = M_first_rows
@@ -272,7 +266,8 @@ def smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, epsilon, r_0, N_submesh, 
     # plt.imshow(M_complete)
     return M_complete
 
-def potential_matrix(kx_matrix, ky_matrix, dk2, epsilon, r_0, N_submesh, submesh_radius=0):
+
+def potential_matrix(V, kx_matrix, ky_matrix, N_submesh, submesh_radius=0):
     """
     This function generates a square matrix that contains the values of
     the potential for each pair of vectors k & k'.
@@ -285,13 +280,13 @@ def potential_matrix(kx_matrix, ky_matrix, dk2, epsilon, r_0, N_submesh, submesh
 
     # OUT OF DIAGONAL: SMART SCHEME
     # N_submesh_off = N_submesh if submesh_off_diag == True else None
-    V_main = smart_rytova_keldysh_matrix(kx_flat, ky_flat, dk2, epsilon, r_0, N_submesh, submesh_radius)
+    V_main = smart_potential_matrix(V, kx_flat, ky_flat, N_submesh, submesh_radius)
 
     # DIAGONAL VALUE: EQUAL FOR EVERY POINT (WHEN USING SUBMESH)
     if N_submesh != None:
         print("\t\tCalculating the potential around zero...")
         k_0 = np.array([0,0])
-        V_0 = rytova_keldysh_average(k_0, dk2, epsilon, r_0, N_submesh, submesh_radius)
+        V_0 = potential_average(V, k_0, N_submesh, submesh_radius)
         np.fill_diagonal(V_main, V_0) # PUT ALL TOGETHER
 
     return V_main
@@ -455,7 +450,7 @@ def include_X(Values, Vectors, r_0, d, Pi_matrix):
     return X
 
 # ============================================================================= #
-##                              Visualization:
+##              Visualization:
 # ============================================================================= #
 def plot_wave_function(eigvecs_holder, state_preview):
     N = int(np.sqrt(eigvecs_holder.shape[0]))
@@ -469,26 +464,34 @@ def plot_wave_function(eigvecs_holder, state_preview):
 @st_time
 def main():
     # ========================================================================= #
-    ##                              Outuput options:
+    ##              Outuput options:
     # ========================================================================= #
     save = True
     preview = True
 
     # ========================================================================= #
-    ##                      Hamiltonian and Potential parameters:
+    ##              Hamiltonian and Potential parameters:
     # ========================================================================= #
     # mc = 0.2834  # M_0
     # mv = -0.3636 # M_0
     # gamma = 2.6e2 # meV*nm ~ 2.6 eV*AA
     # Egap = 2.4e3 # meV ~ 2.4 eV
-    r0_chosen = 4.51 # nm (WSe2)
+
 
     ## PAULO'S TEST:
-    gamma =  3.91504469e2# meV*nm
-    Egap = 1311.79 # meV 2.4 eV
+    # gamma =  3.91504469e2 # meV*nm ~ 2.6 eV*AA
+    # Egap = 1311.79 # meV ~ 2.4 eV
+    # r0_chosen = 4.51 # nm (WSe2)
+
+    ## TEST OF ABSORPTION
+    r0_chosen = 5.0 # nm
+    Egap = 1e3 # meV
+    gamma = 0
+    mc = 0.2
+    mv = -0.4
 
     epsilon_eff = 1
-    alpha_choice = 0
+    alpha_choice = 1
 
     alpha_options = ['zero', 'masses', 'corrected']
     # alpha_choice = int((input('''Enter the 'alphas-choice'(0/1/2):
@@ -572,7 +575,7 @@ def main():
 
 
     # ========================================================================= #
-    ##                          Define the Hamiltonian:
+    ## Define the Hamiltonian:
     # ========================================================================= #
     hamiltonian = ham.H4x4_equal(alphac, alphav, Egap, gamma) # 👍
     # hamiltonian = ham.H2x2(alphac, alphav, Egap, gamma) # 👍
@@ -588,17 +591,17 @@ def main():
 
 
     # ========================================================================= #
-    ##    Choose the number of discrete points to investigate the convergence:
+    ## Choose the number of discrete points to investigate the convergence:
     # ========================================================================= #
-    min_points = 41
-    max_points = 41
-    N_submesh = 11
-    submesh_limit = 0 # units of Delta_k (square lattice)
+    min_points = 101
+    max_points = 101
+    N_submesh = 101
+    submesh_limit = 1000 # units of Delta_k (square lattice)
     n_points = list(range(min_points, max_points+1, 2)) # [107 109 111]
 
 
     # ========================================================================= #
-    ##              Matrices to hold the eigenvalues and the eigenvectors:
+    ## Matrices to hold the eigenvalues and the eigenvectors:
     # ========================================================================= #
     # Number of valence-conduction bands combinations:
     n_val_cond_comb = hamiltonian.condBands * hamiltonian.valeBands
@@ -621,11 +624,12 @@ def main():
         # Values3D, Vectors4D = values_and_vectors(hamiltonian2x2, Kx, Ky, **hamiltonian_params)
         Values3D, Vectors4D = ham.values_and_vectors(hamiltonian, Kx, Ky)
 
-        ### THE BETHE-SALPETER EQUATION:
+        # Defining the potential
+        V = ham.Rytova_Keldysh(dk2=dk2, r_0=r_0, epsilon=epsilon_eff)
 
-        # MATRIX CONSTRUCTION:
+        ### THE BETHE-SALPETER MATRIX CONSTRUCTION:
         print("\tBuilding Potential matrix (Nk x Nk)... ")
-        V_kk = potential_matrix(Kx, Ky, dk2, epsilon, r_0, N_submesh, submesh_radius=submesh_limit)
+        V_kk = potential_matrix(V, Kx, Ky, N_submesh, submesh_radius=submesh_limit)
 
         print("\tIncluding 'mixing' terms (Deltas)... ")
         W_non_diag = include_deltas(V_kk, Values3D, Vectors4D, N_submesh)

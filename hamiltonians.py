@@ -1,14 +1,10 @@
 
-
 import numpy as np
 import numpy.linalg as LA
+import physical_constants as const
 from numba import jit, njit, int32, float32
 from numba.experimental import jitclass
 
-EPSILON_0 = 55.26349406             # e^2 GeV^{-1}fm^{-1} == e^2 (1e9 eV 1e-15 m)^{-1}
-HBAR = 1.23984193/(2*np.pi)         # eV 1e-6 m/c
-M_0  = 0.51099895000                # MeV/c^2
-hbar2_over2m = HBAR**2/(2*M_0)*1e3  # meV nm^2
 
 #===============================================================================
 # NOTE THAT WE CANNOT INHERITATE FROM A "jitclass".
@@ -120,14 +116,13 @@ class H4x4_general:
             gamma_up, gamma_down = self.gamma_up, self.gamma_down
             k2 = kx**2 + ky**2
             H = np.array([
-            [Eg_up + hbar2_over2m * alpha_c_up * k2, gamma_up*(kx+1j*ky), 0 , 0],
-            [gamma_up*(kx-1j*ky), hbar2_over2m * alpha_v_up * k2, 0, 0],
-            [0, 0, Eg_down + hbar2_over2m * alpha_c_down * k2, gamma_down*(kx+1j*ky)],
-            [0, 0, gamma_down*(kx-1j*ky), hbar2_over2m * alpha_v_down * k2]])
+            [Eg_up + const.hbar2_over2m * alpha_c_up * k2, gamma_up*(kx+1j*ky), 0 , 0],
+            [gamma_up*(kx-1j*ky), const.hbar2_over2m * alpha_v_up * k2, 0, 0],
+            [0, 0, Eg_down + const.hbar2_over2m * alpha_c_down * k2, gamma_down*(kx+1j*ky)],
+            [0, 0, gamma_down*(kx-1j*ky), const.hbar2_over2m * alpha_v_down * k2]])
             return H
 
 #===============================================================================
-
 fields2x2 = [
     ('alphac', float32),
     ('alphav', float32),
@@ -154,8 +149,8 @@ class H2x2:
         Gamma = self.gamma
         k2 = kx**2 + ky**2
         H = np.array([
-            [E_gap + hbar2_over2m * Alpha_c * k2, Gamma*(kx+1j*ky)],
-            [Gamma*(kx-1j*ky), hbar2_over2m * Alpha_v * k2]])
+            [E_gap + const.hbar2_over2m * Alpha_c * k2, Gamma*(kx+1j*ky)],
+            [Gamma*(kx-1j*ky), const.hbar2_over2m * Alpha_v * k2]])
         return H
 
 #===============================================================================
@@ -197,6 +192,132 @@ class H4x4_equal(H4x4_general):
         self.valeBands = 2
         self.condBands = 2
 
+#===============================================================================
+fieldsRytova = [
+    ('dk2', float32),
+    ('r_0', float32),
+    ('epsilon', float32),
+]
+
+@jitclass(fieldsRytova)
+class Rytova_Keldysh:
+    def __init__(self, dk2, r_0, epsilon):
+        self.dk2 = dk2
+        self.r_0 = r_0
+        self.epsilon = epsilon
+
+    def call(self, q):
+        """
+        The "pontual" version of the function in Wannier script.
+        Instead of return the whole matrix this function returns
+        only the value asked.
+        """
+        dk2, epsilon, r_0 = self.dk2, self.epsilon, self.r_0
+        Vkk_const = 1e6/(2*const.EPSILON_0)
+        V =  1/(epsilon*q + r_0*q**2)
+        return - Vkk_const * dk2/(2*np.pi)**2 * V
+
+@njit
+def potential_average(V, k_vec_diff, N_submesh, submesh_radius):
+    """
+    As we've been using a square lattice, we can use
+    * w_x_array == w_y_array -> w_array
+    * with limits:  -dw/2, +dw/2
+    * where: dw = sqrt(dk2)
+    """
+    k_diff_norm = np.sqrt(k_vec_diff[0]**2 + k_vec_diff[1]**2)
+    dk = np.sqrt(V.dk2)
+    threshold = submesh_radius * dk
+
+    # print('threshold: ', threshold)
+    # print('k_diff: ', k_diff_norm)
+
+    if N_submesh==None or k_diff_norm > threshold:
+        Potential_value = V.call(k_diff_norm)
+    else:
+        # THIS BLOCK WILL RUN ONLY IF "k_diff_norm" IS EQUAL OR SMALLER
+        # THAN A LIMIT, DENOTED HERE BY "threshold":
+        w_array = np.linspace(-dk/2, dk/2, N_submesh)
+        Potential_value = 0
+        number_of_sing_points = 0
+        for wx in w_array:
+            for wy in w_array:
+                w_vec = np.array([wx, wy])
+                q_vec = k_vec_diff + w_vec
+                q = np.linalg.norm(q_vec)
+                if q == 0: number_of_sing_points += 1; continue; # skip singularities
+                Potential_value += V.call(q)
+        if number_of_sing_points != 0 :
+            print("\t\t\tFor k-k' = ", k_vec_diff ," the number of singular points was ", number_of_sing_points)
+        Potential_value = Potential_value/(N_submesh**2 - number_of_sing_points)
+    return Potential_value
+
+@njit
+def smart_potential_matrix(V, kx_flat, ky_flat, N_submesh, submesh_radius):
+    """
+    CONSIDERING A SQUARE K-SPACE GRID:
+
+    This function explore the regularity in the meshgrid that defines the k-space
+    to build the potential-matrix [V(k-k')].
+
+    Note that it is exclusive for the Rytova-Keldysh potential.
+
+    # TODO: to make this function more general in the sense that any other potential
+    function could be adopted: Define a Potential-class and  pass instances of such
+    class instead of pass attributes of Rytova-Keldysh potential.
+
+    """
+    n_all_k_space = len(kx_flat)
+    n_first_row_k = int(np.sqrt(n_all_k_space)) # number of points in the first row of the grid
+    M_first_rows = np.zeros((n_first_row_k, n_all_k_space))
+    M_complete = np.zeros((n_all_k_space, n_all_k_space))
+    print("\t\tCalculating the first rows (it may take a while)...")
+    for k1_ind in range(n_first_row_k):
+        for k2_ind in range(k1_ind+1, n_all_k_space):
+            k1_vec = np.array([kx_flat[k1_ind], ky_flat[k1_ind]])
+            k2_vec = np.array([kx_flat[k2_ind], ky_flat[k2_ind]])
+            k_diff = k1_vec - k2_vec
+            M_first_rows[k1_ind, k2_ind] = potential_average(V, k_diff, N_submesh, submesh_radius)
+
+    print("\t\tOrganizing the the calculated values...")
+    M_complete[:n_first_row_k,:] = M_first_rows
+    for row in range(1, n_first_row_k):
+        ni, nf = row * n_first_row_k, (row+1) * n_first_row_k
+        mi, mf = ni, -ni
+        M_complete[ni:nf, mi:] = M_first_rows[:, :mf]
+
+    M_complete += M_complete.T
+    # plt.imshow(M_complete)
+    return M_complete
+
+
+def potential_matrix(V, kx_matrix, ky_matrix, N_submesh, submesh_radius=0):
+    """
+    This function generates a square matrix that contains the values of
+    the potential for each pair of vectors k & k'.
+
+    Dimensions = Nk x Nk
+    where Nk = (Nk_x * Nk_y)
+    """
+    kx_flat = kx_matrix.flatten()
+    ky_flat = ky_matrix.flatten()
+
+    # OUT OF DIAGONAL: SMART SCHEME
+    # N_submesh_off = N_submesh if submesh_off_diag == True else None
+    V_main = smart_potential_matrix(V, kx_flat, ky_flat, N_submesh, submesh_radius)
+
+    # DIAGONAL VALUE: EQUAL FOR EVERY POINT (WHEN USING SUBMESH)
+    if N_submesh != None:
+        print("\t\tCalculating the potential around zero...")
+        k_0 = np.array([0,0])
+        V_0 = potential_average(V, k_0, N_submesh, submesh_radius)
+        np.fill_diagonal(V_main, V_0) # PUT ALL TOGETHER
+
+    return V_main
+
+
+
+#===============================================================================
 @njit
 def values_and_vectors(hamiltonian, kx_matrix, ky_matrix):
     """
@@ -233,19 +354,26 @@ def eig_vals_vects(H, W, V, Kx, Ky):
             W[i,j,:], V[i,j,:,:] = LA.eigh(H.call(Kx[i,j], Ky[i,j]))
     return W,V
 
+
 def main():
-    # print(eig_vals(H))
-    # k = np.linspace(-1,1,10)
-    # Kx, Ky = np.meshgrid(k,k)
+    k = np.linspace(-1,1,10)
+    dk2 = (k[1] - k[0])**2
+    Kx, Ky = np.meshgrid(k,k)
+
     # eigenvalues, eigenvectors = values_and_vectors(H,Kx,Ky)
+    # print(eig_vals(H))
     # print(eigenvalues)
-    alphac = 0
-    alphav = 0
-    E_gap = 2.4e3 # meV ~ 2.4 eV
-    gamma = 2.6e2 # meV*nm ~ 2.6 eV*AA
-    H4 = H4x4(alphac, alphav, E_gap, gamma, alphac, alphav, E_gap, gamma)
-    H2 = H2x2(alphac, alphav, E_gap, gamma)
-    print(H2.call(0,0))
+    # alphac = 0
+    # alphav = 0
+    # E_gap = 2.4e3 # meV ~ 2.4 eV
+    # gamma = 2.6e2 # meV*nm ~ 2.6 eV*AA
+    # H4 = H4x4(alphac, alphav, E_gap, gamma, alphac, alphav, E_gap, gamma)
+    # H2 = H2x2(alphac, alphav, E_gap, gamma)
+    # print(H2.call(0,0))
+
+
+
+
 
 
 
