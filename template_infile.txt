@@ -20,4 +20,4 @@ submesh_radius  = 50      # in number of sites; radius of the region where the s
 
 ## SAVING OPTIONS:
 
-n_rec_states    = 100     # Number of states to be recorded
+n_rec_states    = 1000    # Number of states to be recorded
