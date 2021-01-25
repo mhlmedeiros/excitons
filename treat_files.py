@@ -88,10 +88,12 @@ def from_dic_to_var_abs(pol_option, p_matrix, Gamma_option, Gamma1, Gamma2, Gamm
 def verify_output(output_name):
     has_output  = os.path.isfile(output_name + '.npz')
     if has_output:
-        question = "**** You already have the file '{}' ****\nDo you want to REDO the calculations? (Y/n)\n".format(output_name)
+        question = "**** You already have the file '{}' ****\nDo you REALLY want to REDO the calculations? (y/N)\n".format(output_name)
+        default_answer = 'N'
     else:
-        question = "**** You do not have the file '{}' yet ****\nDo you want to proceed with calculations now? (Y/n)\n".format(output_name)
-    answer = input(question) or 'Y'
+        question = "**** You do not have the file '{}' yet ****\nDo you want to proceed with calculations NOW? (Y/n)\n".format(output_name)
+        default_answer = 'Y'
+    answer = input(question) or default_answer
     return answer.upper()
 
 def output_file(output_name, data_dic_to_save):
