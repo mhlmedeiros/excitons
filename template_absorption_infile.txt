@@ -1,0 +1,14 @@
+## LIGHT POLARIZATION:
+
+pol_option  = x         # options = {x, y, c_plus, c_minus}
+p_matrix    = P_2x2     # options = {P_2x2, P_4x4}
+
+
+## CONVOLUTION:
+
+Gamma_option   =  C         # options = {C = constant: Gamma1; V = Γ(ħω; Γ_1, Γ_2, Γ_3)}
+Gamma1         = 10         # Γ_1 = Width at half-maximum (used in options: C and V)
+Gamma2         = 10         # Γ_1 = Width at half-maximum (used in option: V)
+Gamma3         = 10         # Γ_1 = Width at half-maximum (used in option: V)
+padding        = 100        # meV padding
+N_points_broad = 10000      # E_broad = np.linspace(E_raw[0]-padding, E_raw[-1]+padding, N_points_broad)
