@@ -1,0 +1,23 @@
+## MODEL HAMILTONIAN:
+
+Ham           = H2x2                # chosen Hamiltonian has to be a class in 'hamiltonians.py'
+gamma         = 3.91504469e2        # meV*nm
+Egap          = 1311.79             # meV
+r0            = 4.51                # nm
+mc            = 0                   # conduction band effective mass
+mv            = 0                   # valence band effective mass
+alpha_option  = zero                # options: (zero, masses, corrected)
+epsilon       = 1                   # effective dielectric constant
+
+
+## K-SPACE:
+
+L_k             = 5       # the discretized k-space limits: k_x(y) ∈ [-L,L]
+n_mesh          = 101     # quantity of points in each direction
+n_sub           = 101     # quantity of points in each of the submesh direction
+submesh_radius  = 50      # in number of sites; radius of the region where the submesh will be considered
+
+
+## SAVING OPTIONS:
+
+n_rec_states    = 1000    # Number of states to be recorded

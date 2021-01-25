@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import numpy.linalg as LA
 import matplotlib.pyplot as plt
@@ -5,84 +6,51 @@ import matplotlib as mpl
 from matplotlib import cm
 import itertools as it
 import physical_constants as const
+import wannier_coulomb_numba as wannier
+import hamiltonians as ham
+import treat_files as files
 
 plt.rcParams.update({
     "text.usetex": True,
     "font.serif": ["Palatino"],
     })
 
-def hamiltonian2x2(kx, ky, E_gap=0.5, Gamma=1, Alpha_c=1, Alpha_v=-1):
-    """
-    Simple Hamiltonian to test the implementation:
+class Gamma_Lorentz_E_var:
+    def __init__(self, Gamma1, Gamma2, Gamma3, Egap):
+        self.Gamma1 = Gamma1
+        self.Gamma2 = Gamma2
+        self.Gamma3 = Gamma3
+        self.Egap   = Egap
+    def __call__(self, E):
+        Gamma1  = self.Gamma1
+        Gamma2  = self.Gamma2
+        Gamma3  = self.Gamma3
+        Egap   = self.Egap
+        return Gamma1 + Gamma2/(1+np.exp((Egap-E)/Gamma3))
 
-    In its definition we have the effective masses "m_e" and "m_h",
-    we also have the energy "gap". The model include one conduction-band
-    and one valence-band, the couplings between these states are
-    mediated by the named parameter "gamma".
-    """
-    k2 = kx**2 + ky**2
-    H = np.array([[E_gap + const.hbar2_over2m * Alpha_c * k2, Gamma*(kx+1j*ky)],
-                  [Gamma*(kx-1j*ky), const.hbar2_over2m * Alpha_v * k2]])
-    return H
-
-def values_and_vectors(hamiltonian, kx_matrix, ky_matrix, **kwargs):
-    """
-    This function calculates all the eigenvalues-eingenvectors pairs and return them
-    into two multidimensional arrays named here as W and V respectively.
-
-    The dimensions of such arrays depend on the number of sampled points of the
-    reciprocal space and on the dimensions of our model Hamiltonian.
-
-    W.shape = (# kx-points, # ky-points, # rows of "H")
-    V.shape = (# kx-points, # ky-points, # rows of "H", # columns of "H")
-
-    For "W" the order is straightforward:
-    W[i,j,0]  = "the smallest eigenvalue for kx[i] and ky[j]"
-    W[i,j,-1] = "the biggest eigenvalue for kx[i] and ky[j]"
-
-    For "V" we have:
-    V[i,j,:,0] = "first eigenvector which one corresponds to the smallest eigenvalue"
-    V[i,j,:,-1] = "last eigenvector which one corresponds to the biggest eigenvalue"
-
-    """
-    n, m = kx_matrix.shape
-    l, _ = hamiltonian(0,0,**kwargs).shape
-    W = np.zeros((n,m,l))
-    V = np.zeros((n,m,l,l),dtype=complex)
-    for i in range(n):
-        for j in range(m):
-            W[i,j,:], V[i,j,:,:]  = LA.eigh(hamiltonian(kx_matrix[i,j], ky_matrix[i,j], **kwargs))
-    return W,V
-
-def split_values(values_array):
-    # This function splits the eigenvalues into "condution" and "valence" sets
-
-    # The "conduction_values" has stricly positive values
-    conduction_values = [value for value in values_array if value > 0]
-
-    # The negative or null values are labeled as "valence_values"
-    valence_values = [value for value in values_array if value <= 0]
-    return conduction_values, valence_values
-
-def results_arrays(data_path, info_path):
+def results_arrays(data_path):
     data = np.load(data_path)
-    info = np.load(info_path)
-    info_content = [key for key in info.keys()]
-    data_content = [key for key in data.keys()]
-    # print("'data' contains: '%s' and '%s'" % (data_content[0], data_content[1]))
-    # print("'info' contains: '%s' and '%s'" % (info_content[0], info_content[1]))
-    # (# of eigenvals, # of discretizations, # system dimensions)
-    # print("data['eigevals_holder'].shape = ", data['eigvals_holder'].shape)
-    # (# of discretizations, )
-    # print("info['n_points'].shape = ", info['n_points'].shape)
-    # (# of system sizes)
-    # print("info['L_values'].shape = ", info['L_values'].shape)
-    # print("L_values = ", info['L_values'])
-    # print("n_points = ", info['n_points'])
-    return data['eigvals_holder'], data['eigvecs_holder'], info['n_points']
+    # data_content = [key for key in data.keys()]
+    # print(data_content)
+    # print(type(data_content[0]))
+    return data['eigvals_holder'], data['eigvecs_holder']
 
 #==============================================================================#
-def p_matrix(gamma,e_pol):
+def pol_options(option):
+    if      option == 'y'       : e_x, e_y = 0, 1;
+    elif    option == 'c_plus'  : e_x, e_y = 1, 1;
+    elif    option == 'c_minus' : e_x, e_y = 1,-1;
+    else                        : e_x, e_y = 1, 0; # (x) default
+    e_a = np.array([e_x, e_y])
+    return 1/LA.norm(e_a) * e_a
+
+def Gamma_Lorentz_options(option, Gammas_tuple):
+    # Gamma1, Gamma2, Gamma3, Egap = Gammas_tuple
+    if option == 'V': function = Gamma_Lorentz_E_var(*Gammas_tuple)
+    else: function = lambda x : Gamma1
+    return function
+
+def P_2x2(gamma, e_pol):
     ex,ey = e_pol
     e_p = ex + 1j*ey
     e_m = ex - 1j*ey
@@ -91,7 +59,9 @@ def p_matrix(gamma,e_pol):
         [gamma*e_m, 0.0]])
     return P_matrix
 
-def dipole_vector(pol_versor, eigenvalues, eigenvectors, P_matrix):
+# TODO: IMPLEMENT P_4X4
+
+def dipole_vector(pol_versor, eigenvalues, eigenvectors, P_matrix, Hamiltonian):
     """
     This function generate a 2D array that contains the elements of the
     dipole matrix for each combination of kx, ky, c (conduction band), and
@@ -101,9 +71,8 @@ def dipole_vector(pol_versor, eigenvalues, eigenvectors, P_matrix):
 
     N_k = N_x * N_y
 
-    cond_vs, vale_vs = split_values(eigenvalues[0,0,:])
-    cond_n = len(cond_vs) # Number of conduction bands
-    vale_n = len(vale_vs) # Number of valence bands
+    cond_n = Hamiltonian.condBands # Number of conduction bands
+    vale_n = Hamiltonian.valeBands # Number of valence bands
 
     cond_inds = list(range(cond_n))                 # [ 0, 1, ... ,cond_n-1]
     vale_inds = list(range(-1,-1*(vale_n+1),-1))    # [-1,-2, ... , -vale_n]
@@ -130,18 +99,17 @@ def dipole_vector(pol_versor, eigenvalues, eigenvectors, P_matrix):
 
 def absorption_raw(eigvals, eigvecs, dipole_matrix_elements, Egap, dk2):
 
-    N_bse_energies, _, _ = eigvals.shape
+    N_bse_energies = len(eigvals)
     A_p_sums = np.zeros(N_bse_energies)
     C_0 = dk2/(const.EPSILON_0 * const.HBAR)
     # print(4 * np.pi**2 * C_0 / dk2)
-
     # A = eigvecs[:,0,0]
     # print("A.shape = ", A.shape)
     # print("eigenvals.shape = ", eigvals.shape)
-    energies_without_discount = eigvals[:, 0, 0] + Egap
+    energies_without_discount = eigvals + Egap
 
     for i in range(N_bse_energies):
-        A = eigvecs[:,i,0]
+        A = eigvecs[:,i]
         E = energies_without_discount[i]
         A_p_sums[i] = C_0/np.abs(E) * np.abs(A @ dipole_matrix_elements)**2
     return energies_without_discount, A_p_sums
@@ -153,18 +121,12 @@ def Lorentzian(x1, x0, Gamma):
     L = 1/np.pi * (Gamma/2)/((x1-x0)**2 + (Gamma/2)**2)
     return L
 
-def broadening(Energies, Deltas, Gamma_Lorentz):
-    E_array = np.linspace(Energies[0]-100,Energies[-1]+100, 100000)
+def broadening(Energies, Deltas, Gamma_Lorentz, padding, N_points_broadening):
+    E_array = np.linspace(Energies[0]-padding,Energies[-1]+padding, N_points_broadening)
     A_total = np.zeros(len(E_array))
     for E_ind in range(len(Energies)):
         A_total += Deltas[E_ind] * Lorentzian(E_array, Energies[E_ind], Gamma_Lorentz(Energies[E_ind]))
     return E_array, A_total
-
-def gamma_energy_dependent(E):
-    Gamma1 = 10
-    Gamma2 = 10
-    Gamma3 = 10
-    return Gamma1 + Gamma2/(1+np.exp((Egap-E)/Gamma3))
 
 #==============================================================================#
 
@@ -260,80 +222,101 @@ def plot_dat_together(file_path_name, ax):
                             label="Paulo")
     return 0
 
-#==============================================================================#
 
 def main():
-    # PAULO-TEST:
-    r0_chosen = 4.51 # nm (WSe2)
-    epsilon_eff = 1
-    gamma =  3.91504469e2# meV*nm ~ 2.6 eV*AA
-    Egap = 1311.79 # meV ~ 2.4 eV
-    alphac = 0
-    alphav = 0
+    print('\n******************************************************')
+    print("                     ABSORPTION                   ")
+    print('******************************************************\n')
 
-    ## SIMPLE-TEST:
-    # r0_chosen = 5.0 # nm (WSe2)
-    # epsilon_eff = 1
-    # gamma =  0 # meV*nm = eV*AA
-    # Egap = 1e3 # meV ~ 2.4 eV
-    # mc = 0.2
-    # mv = -0.4
-    # alphac = 1/mc
-    # alphav = 1/mv
+    # =============================== #
+    ##     READING THE INPUT FILES:
+    # =============================== #
+    #*********************************#
+    output_name = 'results_absorption'
+    if files.verify_output(output_name) == 'N': return 0
+    #*********************************#
+    # verify the existence of main input file: 'infile.txt'
+    main_input_file =  'infile.txt'
+    files.verify_essential_file(main_input_file)
 
-    ## K-SPACE:
-    k_array = np.linspace(-5,5,101)
-    dk = k_array[1]-k_array[0]
-    dk2 = dk**2
-    Kx, Ky = np.meshgrid(k_array, k_array)
+    # verify the existence of the absorption input file: 'absorption_infile.txt'
+    absorption_input_file = 'absorption_infile.txt'
+    files.verify_file_or_template(absorption_input_file)
 
-    ## CALCULATE THE HAMILTONIAN'S EIGENSTUFF:
-    hamiltonian_params = dict(E_gap=Egap,
-                            Alpha_c=alphac,
-                            Alpha_v=alphav,
-                            Gamma=gamma)
-    VALORES, VETORES = values_and_vectors(hamiltonian2x2, Kx, Ky, **hamiltonian_params)
+    # read both files
+    params_master = files.read_file(main_input_file)
+    params_absortion = files.read_file(absorption_input_file)
+    Ham, gamma, Egap, r_0, mc, mv, alpha_option, epsilon, L_k, n_mesh, n_sub, submesh_radius, n_rec_states = files.from_dic_to_var(**params_master)
+    pol_option, p_matrix, Gamma_option, Gamma1, Gamma2, Gamma3, padding, N_points_broad = files.from_dic_to_var_abs(**params_absortion)
 
-    ## LIGHT-POLARIZATION:
-    e_x = 1
-    e_y = 0
-    e_a = np.array([e_x, e_y])
-    # e_a = 1/LA.norm(e_a) * e_a
+    if alpha_option == 'masses':
+        alphac, alphav = 1/mc, 1/mv
+    elif alpha_option == 'corrected':
+        alphac = 1/mc + 1/hbar2_over2m * (gamma**2/Egap)
+        alphav = 1/mv - 1/hbar2_over2m * (gamma**2/Egap)
+    else:
+        alphac, alphav = 0, 0
 
+    # =============================== #
+    ##    DEFINE THE K-SPACE GRID:
+    # =============================== #
+    Kx, Ky, dk2 = wannier.define_grid_k(L_k, n_mesh)
+    grid = (Kx, Ky, dk2)
+
+    # =============================== #
+    ##    DEFINE THE HAMILTONIAN:
+    # =============================== #
+    hamiltonian = Ham(alphac, alphav, Egap, gamma)
+    potential_obj = ham.Rytova_Keldysh(dk2=dk2, r_0=r_0, epsilon=epsilon)
+    VALORES, VETORES = ham.values_and_vectors(hamiltonian, Kx, Ky)
+
+    # =============================== #
+    ##      LIGHT POLARIZATION:
+    # =============================== #
     ## DIPOLE MOMENTUM
-    # gamma = 1e2 # meV*nm = eV*AA; gamma different from that one in the Hamiltonian for SIMPLE-TEST
+    e_a = pol_options(pol_option)
+    p_matrix = eval(p_matrix)
     P_matrix = p_matrix(gamma, e_a)
-    dipole_matrix = dipole_vector(e_a, VALORES, VETORES, P_matrix)
+    dipole_matrix = dipole_vector(e_a, VALORES, VETORES, P_matrix, hamiltonian)
+
+    # =============================== #
+    ##     LOAD THE BSE-EIGENSTUFF
+    # =============================== #
+    results_file    = 'results_bse.npz'
+    files.verify_essential_file(results_file)
+    path = os.getcwd()
+    data = path + '/' + results_file
+    eigvals, eigvecs = results_arrays(data)
 
 
-    # LOAD THE BSE-EIGENSTUFF
-    ## DATA FOR SIMPLE-TEST:
-    # data = "../Data/BSE_results/data_BSE_alphas_masses_gamma_0.0_eV_AA_Eg_1.0_eV_size_5_eps_1_discrete_101_sub_mesh_101_submesh_radius_1000.npz"
-    # info = "../Data/BSE_results/info_BSE_alphas_masses_gamma_0.0_eV_AA_Eg_1.0_eV_size_5_eps_1_discrete_101_sub_mesh_101_submesh_radius_1000.npz"
-    ## DATA FOR PAULO-TEST (JUPYTER)
-    data = "../Data/BSE_results/data_BSE_alphas_zero_gamma_3.9150446899999998_eV_AA_Eg_1.31179_eV_size_5_eps_1_discrete_101_sub_mesh_101_with_smart_rytova_keldysh_with_potential_average_around_zero.npz"
-    info = "../Data/BSE_results/info_BSE_alphas_zero_gamma_3.9150446899999998_eV_AA_Eg_1.31179_eV_size_5_eps_1_discrete_101_sub_mesh_101_with_smart_rytova_keldysh_with_potential_average_around_zero.npz"
-    eigvals, eigvecs, n_points = results_arrays(data, info)
 
-    x, abs_raw = absorption_raw(eigvals=eigvals,
+    # =============================== #
+    ##     CALCULATE THE ABSORPTION
+    # =============================== #
+    E_raw, Abs_raw      = absorption_raw(eigvals=eigvals,
                         eigvecs=eigvecs,
                         dipole_matrix_elements=dipole_matrix,
                         Egap=Egap,
                         dk2=dk2)
+
+    Gammas_tuple        = (Gamma1, Gamma2, Gamma3, Egap)
+    Gamma_Lorentz       = Gamma_Lorentz_options(Gamma_option, Gammas_tuple)
+    E_broad, Abs_broad  = broadening(E_raw, Abs_raw, Gamma_Lorentz, padding, N_points_broad)
+
+    # =============================== #
+    ##     SAVE THE RESULTS
+    # =============================== #
+    data_dic_to_save    = dict(E_raw=E_raw, Abs_raw=Abs_raw, E_broad=E_broad, Abs_broad=Abs_broad)
+    files.output_file(output_name, data_dic_to_save)
+
+
     # plot_absolute_wave(eigvecs)
-
-    Energies = eigvals[:,0,0] + Egap
-    E_array, absorption = broadening(Energies, abs_raw, lambda x: 10)
-    ## PAULO-TEST:
-    data_paulo = "../Paulo/absorption_tests/mesh_circ_massiveDirac_Nk50/lorentzian_absorption_exciton2D_eh001.dat"
-    ## SIMPLE-TEST:
-    # data_paulo = "../Paulo/absorption_tests/mesh_circ_effmass_Nk50/lorentzian_absorption_exciton2D_eh001.dat"
-
+    # plot_deltas_absorption(x, Abs_raw)
     fig, ax = plt.subplots(figsize=(10,8))
-    # plot_deltas_absorption(x, abs_raw)
-    plot_absorption(E_array, absorption, ax)
-    plot_dat_together(data_paulo, ax)
-    plt.legend(fontsize=24, loc="upper center")
+    plot_absorption(E_broad, Abs_broad, ax)
+    # plot_dat_together(data_paulo, ax)
+    # plt.legend(fontsize=24, loc="upper center")
+    plt.savefig('absorption_broad.png')
     plt.show()
 
 
