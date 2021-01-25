@@ -16,14 +16,16 @@ plt.rcParams.update({
     })
 
 class Gamma_Lorentz_E_var:
-    def __init__(self, Gamma1, Gamma2, Gamma3):
+    def __init__(self, Gamma1, Gamma2, Gamma3, Egap):
         self.Gamma1 = Gamma1
         self.Gamma2 = Gamma2
         self.Gamma3 = Gamma3
+        self.Egap   = Egap
     def __call__(self, E):
-        Gamma1 = self.Gamma1
-        Gamma2 = self.Gamma2
-        Gamma3 = self.Gamma3
+        Gamma1  = self.Gamma1
+        Gamma2  = self.Gamma2
+        Gamma3  = self.Gamma3
+        Egap   = self.Egap
         return Gamma1 + Gamma2/(1+np.exp((Egap-E)/Gamma3))
 
 def results_arrays(data_path):
@@ -43,8 +45,8 @@ def pol_options(option):
     return 1/LA.norm(e_a) * e_a
 
 def Gamma_Lorentz_options(option, Gammas_tuple):
-    Gamma1, Gamma2, Gamma3 = Gammas_tuple
-    if option == 'V': function = Gamma_Lorentz_E_var(Gamma1, Gamma2, Gamma3)
+    # Gamma1, Gamma2, Gamma3, Egap = Gammas_tuple
+    if option == 'V': function = Gamma_Lorentz_E_var(*Gammas_tuple)
     else: function = lambda x : Gamma1
     return function
 
@@ -297,7 +299,7 @@ def main():
                         Egap=Egap,
                         dk2=dk2)
 
-    Gammas_tuple        = (Gamma1, Gamma2, Gamma3)
+    Gammas_tuple        = (Gamma1, Gamma2, Gamma3, Egap)
     Gamma_Lorentz       = Gamma_Lorentz_options(Gamma_option, Gammas_tuple)
     E_broad, Abs_broad  = broadening(E_raw, Abs_raw, Gamma_Lorentz, padding, N_points_broad)
 
@@ -314,8 +316,8 @@ def main():
     plot_absorption(E_broad, Abs_broad, ax)
     # plot_dat_together(data_paulo, ax)
     # plt.legend(fontsize=24, loc="upper center")
-    plt.show()
     plt.savefig('absorption_broad.png')
+    plt.show()
 
 
 if __name__ == '__main__':
