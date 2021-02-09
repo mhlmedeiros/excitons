@@ -8,6 +8,26 @@ from numba.experimental import jitclass
 list_of_hamiltonians = ['H2x2','H4x4','H4x4_equal']
 
 #===============================================================================
+# TO CALCULATE EXCHANGE TERM IN BSE:
+#===============================================================================
+p = 1/np.sqrt(2) * np.array([1, 1j])
+m = 1/np.sqrt(2) * np.array([1,-1j])
+O = np.array([0,0])
+
+def Pi4x4(gamma):
+    Pi = gamma * np.array([
+        [O,p,O,O],
+        [m,O,O,O],
+        [O,O,O,p],
+        [O,O,m,O]])
+    return Pi
+
+def Pi2x2(gamma):
+    Pi = gamma * np.array([
+        [O,p],
+        [m,O]]) #
+    return Pi
+#===============================================================================
 # NOTE THAT WE CANNOT INHERITATE FROM A "jitclass".
 # SO, AN WORKAROUND IS TO DEFINE A PYTHON CLASS THAT BEHAVES LIKE A
 # ABSTRACT CLASS. SUCH CLASS IS NOT ALLOWED TO INSTANTIATE OBJECTS
@@ -199,6 +219,83 @@ class H4x4_equal(H4x4_general):
         self.condBands = 2
 
 #===============================================================================
+fieldsKormanyosFabian = [
+    ('E_c', float32),
+    ('E_v', float32),
+    ('alpha_up', float32),
+    ('alpha_dn', float32),
+    ('beta_up', float32),
+    ('beta_dn', float32),
+    ('gamma', float32),
+    ('delta_c', float32),
+    ('delta_v', float32),
+    ('kappa_up', float32),
+    ('kappa_dn', float32),
+    ('valey', int16),
+    ('condBands', int16),
+    ('valeBands', int16),
+]
+
+@jitclass(fieldsKormanyosFabian)
+class H4x4_Kormanyos_Fabian:
+    """
+    The instances of this class cannot be passed to numba-compiled functions.
+    But, since it is a Python class it can be parent of other classes, it
+    includes 'jitclasses'.
+    """
+    def __init__(self, E_c, E_v, a_up, a_dn, b_up, b_dn, gamma, d_c, d_v, ka_up, ka_dn, valey=1):
+        # PARAMS OF THE HAMILTONIAN
+        self.E_c = E_c
+        self.E_v = E_v
+        self.alpha_up = a_up
+        self.alpha_dn = a_dn
+        self.beta_up = b_up
+        self.beta_dn = b_dn
+        self.gamma = gamma
+        self.delta_c = d_c
+        self.delta_v = d_v
+        self.kappa_up = ka_up
+        self.kappa_dn = ka_dn
+        ## META DATA OF THE HAMILTONIAN:
+        self.valey = valey        # K == 1, K' == -1
+        self.condBands = 2
+        self.valeBands = 2
+
+    def H_0(self):
+        return np.diag([self.E_v, self.E_v, self.E_c, self.E_c])
+
+    def H_SO(self):
+        return self.valey * np.diag([self.delta_v, -self.delta_v, self.delta_c, -self.delta_c])
+
+    def H_kp1(self, kx, ky):
+        k_plus  = kx + self.valey * 1j * ky
+        k_minus = kx - self.valey * 1j * ky
+        return self.gamma * self.valey * np.diag([k_plus, k_plus], k=2) + np.diag([k_minus, k_minus], k=-2)
+
+    def H_kp2(self, kx, ky):
+        k2 = kx**2 + ky**2
+        k_plus  = kx + self.valey * 1j * ky
+        k_minus = kx - self.valey * 1j * ky
+        if self.valey == 1:
+            alpha1, alpha2 = self.alpha_up, self.alpha_dn
+            beta1, beta2 = self.beta_up, self.beta_dn
+            kappa1, kappa2 = self.kappa_up, self.kappa_dn
+        else:
+            alpha1, alpha2 = self.alpha_dn, self.alpha_up
+            beta1, beta2 = self.beta_dn, self.beta_up
+            kappa1, kappa2 = self.kappa_dn, self.kappa_up
+
+        H_kp2    = (
+            np.diag([alpha1 * k2, alpha2 * k2, beta1 * k2, beta2 * k2], k=0)
+          + np.diag([kappa1 * k_plus**2 , kappa2 * k_plus**2],k=2)
+          + np.diag([kappa1 * k_minus**2, kappa2 * k_minus**2],k=-2)
+        )
+        return H_kp2
+
+    def __call__(self, kx,ky):
+        return self.H_0() + self.H_SO() + self.H_kp1(kx, ky) + self.H_kp2(kx, ky)
+
+#===============================================================================
 fieldsRytova = [
     ('dk2', float32),
     ('r_0', float32),
@@ -374,6 +471,7 @@ def main():
     # E_gap = 2.4e3 # meV ~ 2.4 eV
     # gamma = 2.6e2 # meV*nm ~ 2.6 eV*AA
     # H4 = H4x4(alphac, alphav, E_gap, gamma, alphac, alphav, E_gap, gamma)
+    H4 = H4x4_equal(alphac, alphav, E_gap, gamma)
     # H2 = H2x2(alphac, alphav, E_gap, gamma)
     # print(H2.call(0,0))
 
