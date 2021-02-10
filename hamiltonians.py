@@ -231,9 +231,9 @@ fieldsKormanyosFabian = [
     ('delta_v', float32),
     ('kappa_up', float32),
     ('kappa_dn', float32),
-    ('valey', int16),
-    ('condBands', int16),
-    ('valeBands', int16),
+    ('valey', int32),
+    ('condBands', int32),
+    ('valeBands', int32),
 ]
 
 @jitclass(fieldsKormanyosFabian)
@@ -243,10 +243,10 @@ class H4x4_Kormanyos_Fabian:
     But, since it is a Python class it can be parent of other classes, it
     includes 'jitclasses'.
     """
-    def __init__(self, E_c, E_v, a_up, a_dn, b_up, b_dn, gamma, d_c, d_v, ka_up, ka_dn, valey=1):
+    def __init__(self, E_c, E_v, a_up, a_dn, b_up, b_dn, gamma, d_c, d_v, ka_up, ka_dn, valey):
         # PARAMS OF THE HAMILTONIAN
-        self.E_c = E_c
-        self.E_v = E_v
+        self.E_c = E_c + d_c
+        self.E_v = E_v - d_v
         self.alpha_up = a_up
         self.alpha_dn = a_dn
         self.beta_up = b_up
@@ -262,37 +262,55 @@ class H4x4_Kormanyos_Fabian:
         self.valeBands = 2
 
     def H_0(self):
-        return np.diag([self.E_v, self.E_v, self.E_c, self.E_c])
+        E_v, E_c = self.E_v, self.E_c
+        H0 = np.array([
+        [E_v, 0, 0, 0],
+        [0, E_v, 0, 0],
+        [0, 0, E_c, 0],
+        [0, 0, 0, E_c]])
+        return H0
 
     def H_SO(self):
-        return self.valey * np.diag([self.delta_v, -self.delta_v, self.delta_c, -self.delta_c])
+        d_v, d_c = self.delta_v, self.delta_c
+        HSO = np.array([
+        [d_v, 0, 0, 0],
+        [0,-d_v, 0, 0],
+        [0, 0, d_c, 0],
+        [0, 0, 0,-d_c]])
+        return self.valey * HSO
 
     def H_kp1(self, kx, ky):
-        k_plus  = kx + self.valey * 1j * ky
-        k_minus = kx - self.valey * 1j * ky
-        return self.gamma * self.valey * np.diag([k_plus, k_plus], k=2) + np.diag([k_minus, k_minus], k=-2)
+        k_p  = kx + self.valey * 1j * ky
+        k_m = kx - self.valey * 1j * ky
+        gamma = self.gamma
+        valey = self.valey
+        Hkp1 =np.array([
+        [0,0,k_p,0],
+        [0,0,0,k_p],
+        [k_m,0,0,0],
+        [0,k_m,0,0]])
+        return gamma * valey * Hkp1
 
     def H_kp2(self, kx, ky):
-        k2 = kx**2 + ky**2
-        k_plus  = kx + self.valey * 1j * ky
-        k_minus = kx - self.valey * 1j * ky
+        k2  = kx**2 + ky**2
+        k_p = kx + self.valey * 1j * ky
+        k_m = kx - self.valey * 1j * ky
         if self.valey == 1:
-            alpha1, alpha2 = self.alpha_up, self.alpha_dn
-            beta1, beta2 = self.beta_up, self.beta_dn
-            kappa1, kappa2 = self.kappa_up, self.kappa_dn
+            a1, a2 = self.alpha_up, self.alpha_dn
+            b1, b2 = self.beta_up, self.beta_dn
+            ka1, ka2 = self.kappa_up, self.kappa_dn
         else:
-            alpha1, alpha2 = self.alpha_dn, self.alpha_up
-            beta1, beta2 = self.beta_dn, self.beta_up
-            kappa1, kappa2 = self.kappa_dn, self.kappa_up
+            a1, a2 = self.alpha_dn, self.alpha_up
+            b1, b2 = self.beta_dn, self.beta_up
+            kau, kad = self.kappa_up, self.kappa_dn
+        Hkp2 = np.array([
+        [a1*k2     ,         0,kau*k_p**2,         0],
+        [         0,     a2*k2,         0,kad*k_p**2],
+        [kau*k_m**2,         0,     b1*k2,         0],
+        [         0,kad*k_m**2,         0,     b2*k2]])
+        return Hkp2
 
-        H_kp2    = (
-            np.diag([alpha1 * k2, alpha2 * k2, beta1 * k2, beta2 * k2], k=0)
-          + np.diag([kappa1 * k_plus**2 , kappa2 * k_plus**2],k=2)
-          + np.diag([kappa1 * k_minus**2, kappa2 * k_minus**2],k=-2)
-        )
-        return H_kp2
-
-    def __call__(self, kx,ky):
+    def call(self, kx,ky):
         return self.H_0() + self.H_SO() + self.H_kp1(kx, ky) + self.H_kp2(kx, ky)
 
 #===============================================================================
