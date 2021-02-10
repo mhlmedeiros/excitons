@@ -298,11 +298,11 @@ class H4x4_Kormanyos_Fabian:
         if self.valey == 1:
             a1, a2 = self.alpha_up, self.alpha_dn
             b1, b2 = self.beta_up, self.beta_dn
-            ka1, ka2 = self.kappa_up, self.kappa_dn
+            kau, kad = self.kappa_up, self.kappa_dn
         else:
             a1, a2 = self.alpha_dn, self.alpha_up
             b1, b2 = self.beta_dn, self.beta_up
-            kau, kad = self.kappa_up, self.kappa_dn
+            kau, kad = self.kappa_dn, self.kappa_up
         Hkp2 = np.array([
         [a1*k2     ,         0,kau*k_p**2,         0],
         [         0,     a2*k2,         0,kad*k_p**2],
