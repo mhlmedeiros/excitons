@@ -239,8 +239,8 @@ def potential_average(V, k_vec_diff, N_submesh, submesh_radius):
                 q = np.linalg.norm(q_vec)
                 if q == 0: number_of_sing_points += 1; continue; # skip singularities
                 Potential_value += V.call(q)
-        if number_of_sing_points != 0 :
-            print("\t\t\tFor k-k' = ", k_vec_diff ," the number of singular points was ", number_of_sing_points)
+        # if number_of_sing_points != 0 :
+            # print("\t\t\tFor k-k' = ", k_vec_diff ," the number of singular points was ", number_of_sing_points)
         Potential_value = Potential_value/(N_submesh**2 - number_of_sing_points)
     return Potential_value
 
@@ -263,7 +263,7 @@ def smart_potential_matrix(V, kx_flat, ky_flat, N_submesh, submesh_radius):
     n_first_row_k = int(np.sqrt(n_all_k_space)) # number of points in the first row of the grid
     M_first_rows = np.zeros((n_first_row_k, n_all_k_space))
     M_complete = np.zeros((n_all_k_space, n_all_k_space))
-    print("\t\tCalculating the first rows (it may take a while)...")
+    # print("\t\tCalculating the first rows (it may take a while)...")
     for k1_ind in range(n_first_row_k):
         for k2_ind in range(k1_ind+1, n_all_k_space):
             k1_vec = np.array([kx_flat[k1_ind], ky_flat[k1_ind]])
@@ -271,7 +271,7 @@ def smart_potential_matrix(V, kx_flat, ky_flat, N_submesh, submesh_radius):
             k_diff = k1_vec - k2_vec
             M_first_rows[k1_ind, k2_ind] = potential_average(V, k_diff, N_submesh, submesh_radius)
 
-    print("\t\tOrganizing the the calculated values...")
+    # print("\t\tOrganizing the the calculated values...")
     M_complete[:n_first_row_k,:] = M_first_rows
     for row in range(1, n_first_row_k):
         ni, nf = row * n_first_row_k, (row+1) * n_first_row_k
@@ -300,7 +300,7 @@ def potential_matrix(V, kx_matrix, ky_matrix, N_submesh, submesh_radius=0):
 
     # DIAGONAL VALUE: EQUAL FOR EVERY POINT (WHEN USING SUBMESH)
     if N_submesh != None:
-        print("\t\tCalculating the potential around zero...")
+        # print("\t\tCalculating the potential around zero...")
         k_0 = np.array([0,0])
         V_0 = potential_average(V, k_0, N_submesh, submesh_radius)
         np.fill_diagonal(V_main, V_0) # PUT ALL TOGETHER

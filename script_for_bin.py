@@ -9,7 +9,7 @@ import absorption
 # ========================================================================= #
 def main():
     bse_solver.main()
-    absorption.main()
+    # absorption.main()
     # print(not os.path.isfile('infile_absorption.txt'))
 
 if __name__ == '__main__':

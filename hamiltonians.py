@@ -84,6 +84,29 @@ class Hamiltonian:
         return np.sum(cond_1*cond_2) * np.sum(vale_2*vale_1)
 
 #===============================================================================
+fieldsWannier=[
+    ('Egap',     float32),
+    ('m_eff',    float32),
+    ('condBands', int32),
+    ('valeBands', int32),
+]
+
+class H_Wannier:
+
+    def __init__(self,m_1,m_2=None):
+        """
+        """
+        if m_2 != None: self.m_eff = (m_1*m_2)/(m_1+m_2)
+        else: self.m_eff = m_1
+        self.condBands = 0
+        self.valeBands = 0
+        self.Egap      = 0
+
+    def call(self,kx,ky):
+        m_eff = self.m_eff
+        return (const.hbar2_over2m/m_eff)*(kx**2 + ky**2)
+
+#===============================================================================
 fields2x2 = [
     ('alphac', float32),
     ('alphav', float32),
@@ -434,6 +457,16 @@ def eig_vals_vects(H, W, V, Kx, Ky):
         for j in range(nx):
             W[i,j,:], V[i,j,:,:] = LA.eigh(H.call(Kx[i,j], Ky[i,j]))
     return W,V
+
+
+def kinetic_wannier(Ham, kx_matrix, ky_matrix):
+    kx_flat   = kx_matrix.flatten()
+    ky_flat   = ky_matrix.flatten()
+    n_points  = len(kx_flat)
+    K_Wannier = np.empty(n_points)
+    for ind in range(n_points):
+        K_Wannier[ind] = Ham.call(kx_flat[ind], ky_flat[ind])
+    return np.diagflat(K_Wannier)
 
 
 def main():

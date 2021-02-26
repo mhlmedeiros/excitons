@@ -203,6 +203,6 @@ def verify_output(output_name):
 def output_file(output_name, data_dic_to_save):
     current_path = os.getcwd()
     complete_path = current_path + '/' + output_name
-    print("\nSaving '%s' ... " % output_name)
+    # print("\nSaving '%s' ... " % output_name)
     np.savez(complete_path, **data_dic_to_save)
-    print("Done!")
+    # print("Done!")
