@@ -45,21 +45,15 @@ def pol_options(option):
     return 1/LA.norm(e_a) * e_a
 
 def Gamma_Lorentz_options(option, Gammas_tuple):
-    # Gamma1, Gamma2, Gamma3, Egap = Gammas_tuple
+    Gamma1, Gamma2, Gamma3, Egap = Gammas_tuple
     if option == 'V': function = Gamma_Lorentz_E_var(*Gammas_tuple)
     else: function = lambda x : Gamma1
     return function
 
-def P_2x2(gamma, e_pol):
-    ex,ey = e_pol
-    e_p = ex + 1j*ey
-    e_m = ex - 1j*ey
-    P_matrix = np.array([
-        [0.0, gamma*e_p],
-        [gamma*e_m, 0.0]])
-    return P_matrix
-
-# TODO: IMPLEMENT P_4X4
+def p_matrix(Hamiltonian, e_pol):
+    Pix, Piy = Hamiltonian.Pi()
+    P_MATRIX = e_pol[0] * Pix + e_pol[1] * Piy
+    return P_MATRIX
 
 def dipole_vector(pol_versor, eigenvalues, eigenvectors, P_matrix, Hamiltonian):
     """
@@ -74,8 +68,10 @@ def dipole_vector(pol_versor, eigenvalues, eigenvectors, P_matrix, Hamiltonian):
     cond_n = Hamiltonian.condBands # Number of conduction bands
     vale_n = Hamiltonian.valeBands # Number of valence bands
 
-    cond_inds = list(range(cond_n))                 # [ 0, 1, ... ,cond_n-1]
-    vale_inds = list(range(-1,-1*(vale_n+1),-1))    # [-1,-2, ... , -vale_n]
+    # cond_inds = list(range(cond_n))                 # [ 0, 1, ... ,cond_n-1] # OLD VERSION
+    # vale_inds = list(range(-1,-1*(vale_n+1),-1))    # [-1,-2, ... , -vale_n] # OLD VERSION
+    cond_inds = list(range(-1,-1*(cond_n+1),-1))    # [-1,-2, ... , -vale_n] # NEW VERSION
+    vale_inds = list(range(vale_n))                 # [ 0, 1, ... ,cond_n-1] # NEW VERSION
     k_inds = list(range(N_k))                       # [ 0, 1, ... , N_k ]
 
     # sum_components_pol_versor = pol_versor @ np.array([1,1j])
@@ -244,30 +240,47 @@ def main():
     files.verify_file_or_template(absorption_input_file)
 
     # read both files
-    params_master = files.read_file(main_input_file)
-    params_absortion = files.read_file(absorption_input_file)
-    Ham, gamma, Egap, r_0, mc, mv, alpha_option, epsilon, L_k, n_mesh, n_sub, submesh_radius, n_rec_states = files.from_dic_to_var(**params_master)
-    pol_option, p_matrix, Gamma_option, Gamma1, Gamma2, Gamma3, padding, N_points_broad = files.from_dic_to_var_abs(**params_absortion)
+    # params_master = files.read_file(main_input_file)
+    # params_abs    = files.read_file(absorption_input_file)
+    params_master = files.read_params(main_input_file)
+    params_abs    = files.read_params(absorption_input_file)
 
-    if alpha_option == 'masses':
-        alphac, alphav = 1/mc, 1/mv
-    elif alpha_option == 'corrected':
-        alphac = 1/mc + 1/hbar2_over2m * (gamma**2/Egap)
-        alphav = 1/mv - 1/hbar2_over2m * (gamma**2/Egap)
-    else:
-        alphac, alphav = 0, 0
+
+    # Ham, gamma, Egap, r_0, mc, mv, alpha_option, epsilon, exchange, d_chosen, L_k, n_mesh, n_sub, submesh_radius, n_rec_states = files.from_dic_to_var(**params_master)
+    # pol_option, p_matrix, Gamma_option, Gamma1, Gamma2, Gamma3, padding, N_points_broad = files.from_dic_to_var_abs(**params_absortion)
+    #
+    # if alpha_option == 'masses':
+    #     alphac, alphav = 1/mc, 1/mv
+    # elif alpha_option == 'corrected':
+    #     alphac = 1/mc + 1/hbar2_over2m * (gamma**2/Egap)
+    #     alphav = 1/mv - 1/hbar2_over2m * (gamma**2/Egap)
+    # else:
+    #     alphac, alphav = 0, 0
+
+    # =============================== #
+    ##    POP OUT ALL INFORMATION:
+    # =============================== #
+    Ham, r_0, epsilon, exchange, d_value, Lk, Nk, Nsub, Rsub, Nsaved = files.pop_out_model(params_master)
+    pol_option      = params_abs['pol_option']
+    # p_matrix        = eval('ham' + (params_abs['p_matrix']))
+    Gamma_option    = params_abs['Gamma_option']
+    Gamma1          = params_abs['Gamma1']
+    Gamma2          = params_abs['Gamma2']
+    Gamma3          = params_abs['Gamma3']
+    padding         = params_abs['padding']
+    N_points_broad  = params_abs['N_points_broad']
 
     # =============================== #
     ##    DEFINE THE K-SPACE GRID:
     # =============================== #
-    Kx, Ky, dk2 = wannier.define_grid_k(L_k, n_mesh)
+    Kx, Ky, dk2 = wannier.define_grid_k(Lk, Nk)
     grid = (Kx, Ky, dk2)
 
     # =============================== #
     ##    DEFINE THE HAMILTONIAN:
     # =============================== #
-    hamiltonian = Ham(alphac, alphav, Egap, gamma)
-    potential_obj = ham.Rytova_Keldysh(dk2=dk2, r_0=r_0, epsilon=epsilon)
+    hamiltonian      = Ham(**params_master)
+    potential_obj    = ham.Rytova_Keldysh(dk2=dk2, r_0=r_0, epsilon=epsilon)
     VALORES, VETORES = ham.values_and_vectors(hamiltonian, Kx, Ky)
 
     # =============================== #
@@ -275,8 +288,8 @@ def main():
     # =============================== #
     ## DIPOLE MOMENTUM
     e_a = pol_options(pol_option)
-    p_matrix = eval(p_matrix)
-    P_matrix = p_matrix(gamma, e_a)
+    # p_matrix = eval(p_matrix)
+    P_matrix = p_matrix(hamiltonian, e_a)
     dipole_matrix = dipole_vector(e_a, VALORES, VETORES, P_matrix, hamiltonian)
 
     # =============================== #
@@ -296,10 +309,10 @@ def main():
     E_raw, Abs_raw      = absorption_raw(eigvals=eigvals,
                         eigvecs=eigvecs,
                         dipole_matrix_elements=dipole_matrix,
-                        Egap=Egap,
+                        Egap=hamiltonian.Egap,
                         dk2=dk2)
 
-    Gammas_tuple        = (Gamma1, Gamma2, Gamma3, Egap)
+    Gammas_tuple        = (Gamma1, Gamma2, Gamma3, hamiltonian.Egap)
     Gamma_Lorentz       = Gamma_Lorentz_options(Gamma_option, Gammas_tuple)
     E_broad, Abs_broad  = broadening(E_raw, Abs_raw, Gamma_Lorentz, padding, N_points_broad)
 

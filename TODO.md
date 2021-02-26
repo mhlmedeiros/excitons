@@ -63,7 +63,7 @@ What I have to do to improve my code:
 2. Implement an automatic to named the output files **OK**
 3. Change the strategy of calculate all eigenvalues to *Lanczos algorithm*.
 3. Perform averages over sub-grids around the mesh points in k-space to improve convergence
-    * Doing so we'll could abandon the extrapolation strategy
+    * Doing so we'll could abandon the extrapolation strategy **OK**
 
 ## Reading the files
 

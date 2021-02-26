@@ -1,0 +1,24 @@
+## MODEL HAMILTONIAN:
+
+Ham           = H_Wannier           # chosen Hamiltonian has to be a class in 'hamiltonians.py'
+m_1           = 0.1                 # float : [m0]
+r0            = 4.51                # float : nm
+epsilon       = 1                   # float : effective dielectric constant
+
+## BSE EXCHANGE (IF RUNNING WANNIER KEEP THIS VARIABLES ANYWAYS):
+
+exchange      = 0                   # int   : 0 = False, 1 = True
+d_chosen      = 0.6                 # float : Chose a value in the interval [0.6, 0.65] nm
+
+
+## K-SPACE:
+
+L_k             = 8                 # float : the discretized k-space limits: [nm^(-1)]
+n_mesh          = 161               # int   : quantity of points in each direction
+n_sub           = 161               # int   : quantity of points in each of the submesh direction
+submesh_radius  = 0                 # int   : in number of sites; radius of the region where the submesh will be considered
+
+
+## SAVING OPTIONS:
+
+n_rec_states    = 4                 # int : Number of states to be recorded

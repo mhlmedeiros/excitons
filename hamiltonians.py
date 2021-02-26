@@ -1,4 +1,3 @@
-
 import numpy as np
 import numpy.linalg as LA
 import physical_constants as const
@@ -84,44 +83,28 @@ class Hamiltonian:
         # The operators "@" and "np.dot()" return a warning
         return np.sum(cond_1*cond_2) * np.sum(vale_2*vale_1)
 
-class H4x4_general:
-    """
-    The instances of this class cannot be passed to numba-compiled functions.
-    But, since it is a Python class it can be parent of other classes, it
-    includes 'jitclasses'.
-    """
-    def __init__(self, alphac_up, alphav_up, gap_up, gamma_up, alphac_down, alphav_down, gap_down, gamma_down):
-        ## SPIN-UP:
-        self.alphac_up = alphac_up
-        self.alphav_up = alphav_up
-        self.gap_up = gap_up
-        self.gamma_up = gamma_up
-        ## SPIN-DOWN:
-        self.alphac_down = alphac_down
-        self.alphav_down = alphav_down
-        self.gap_down = gap_down
-        self.gamma_down = gamma_down
-        ## HAMILTONIAN:
-        self.valeBands = 2
-        self.condBands = 2
+#===============================================================================
+fieldsWannier=[
+    ('Egap',     float32),
+    ('m_eff',    float32),
+    ('condBands', int32),
+    ('valeBands', int32),
+]
 
-    def call(self, kx, ky):
+class H_Wannier:
+
+    def __init__(self,m_1,m_2=None):
         """
-        To be used as a parent class for "jit-classes" we cannot define
-        the parent class with a '__call__' method. Instead, we define a
-        simple method named 'call' that needs to be called explicitly.
         """
-        Eg_up, Eg_down = self.gap_up, self.gap_down
-        alpha_c_up, alpha_c_down = self.alphac_up, self.alphac_down
-        alpha_v_up, alpha_v_down = self.alphav_up, self.alphav_down
-        gamma_up, gamma_down = self.gamma_up, self.gamma_down
-        k2 = kx**2 + ky**2
-        H = np.array([
-        [Eg_up + const.hbar2_over2m * alpha_c_up * k2, gamma_up*(kx+1j*ky), 0 , 0],
-        [gamma_up*(kx-1j*ky), const.hbar2_over2m * alpha_v_up * k2, 0, 0],
-        [0, 0, Eg_down + const.hbar2_over2m * alpha_c_down * k2, gamma_down*(kx+1j*ky)],
-        [0, 0, gamma_down*(kx-1j*ky), const.hbar2_over2m * alpha_v_down * k2]])
-        return H
+        if m_2 != None: self.m_eff = (m_1*m_2)/(m_1+m_2)
+        else: self.m_eff = m_1
+        self.condBands = 0
+        self.valeBands = 0
+        self.Egap      = 0
+
+    def call(self,kx,ky):
+        m_eff = self.m_eff
+        return (const.hbar2_over2m/m_eff)*(kx**2 + ky**2)
 
 #===============================================================================
 fields2x2 = [
@@ -143,18 +126,116 @@ class H2x2:
         self.valeBands = 1
         self.condBands = 1
 
-    def call(self, kx, ky):
-        E_gap = self.gap
-        Alpha_c = self.alphac
-        Alpha_v = self.alphav
-        Gamma = self.gamma
-        k2 = kx**2 + ky**2
+    def Pi(self):
+        gamma = self.gamma
+        Pix = gamma * np.array([
+            [0,1],
+            [1,0]])
+        Piy = gamma * np.array([
+            [  0, 1j],
+            [-1j,  0]])
+        return Pix, Piy
+
+    def H_0():
+        E_gap   = self.gap
         H = np.array([
-            [E_gap + const.hbar2_over2m * Alpha_c * k2, Gamma*(kx+1j*ky)],
-            [Gamma*(kx-1j*ky), const.hbar2_over2m * Alpha_v * k2]])
+            [E_gap, 0],
+            [    0, 0]])
         return H
 
+    def H_kp1(self, kx, ky):
+        # gamma = self.gamma
+        Pix, Piy = self.Pi()
+        return kx*Pix + ky*Piy
+
+    def H_k2(self, kx, ky):
+        a_c = self.alphac
+        a_v = self.alphav
+        k2 = kx**2 + ky**2
+        H = const.hbar2_over2m * k2 * np.array([
+            [ a_c,   0],
+            [   0, a_v]])
+        return H
+
+    def call(self, kx, ky):
+        return self.H_0() + self.H_kp1(kx,ky) + self.H_k2(kx,ky)
+
 #===============================================================================
+
+class H4x4_general:
+    """
+    The instances of this class cannot be passed to numba-compiled functions.
+    But, since it is a Python class it can be parent of other classes, it
+    includes 'jitclasses'.
+    """
+    def __init__(self, alphac_up, alphav_up, gap_up, gamma_up, alphac_down, alphav_down, gap_down, gamma_down):
+        ## SPIN-UP:
+        self.alphac_up = alphac_up
+        self.alphav_up = alphav_up
+        self.gap_up = gap_up
+        self.gamma_up = gamma_up
+        ## SPIN-DOWN:
+        self.alphac_down = alphac_down
+        self.alphav_down = alphav_down
+        self.gap_down = gap_down
+        self.gamma_down = gamma_down
+        ## HAMILTONIAN:
+        self.valeBands = 2
+        self.condBands = 2
+
+    def Pi(self):
+        g_up = self.gamma_up
+        g_dn = self.gamma_down
+        Pix = (1. + 0.j) * np.array([
+            [   0,g_up,   0,   0],
+            [g_up,   0,   0,   0],
+            [   0,   0,   0,g_dn],
+            [   0,   0,g_dn,   0]])
+        Piy = 1j * np.array([
+            [    0, g_up,     0,    0],
+            [-g_up,    0,     0,    0],
+            [    0,    0,     0, g_dn],
+            [    0,    0, -g_dn,    0]])
+        return Pix, Piy
+
+    def H_0(self):
+        Eg_up = self.gap_up
+        Eg_dn = self.gap_down
+        H = np.array([
+        [Eg_up,   0,    0,   0],
+        [    0,   0,    0,   0],
+        [    0,   0,Eg_dn,   0],
+        [    0,   0,    0,   0]])
+        return H
+
+    def H_kp1(self, kx, ky):
+        Pix, Piy = self.Pi()
+        return kx*Pix + ky*Piy
+
+    def H_k2(self,kx,ky):
+        k2 = kx**2 + ky**2
+        a_c_up, a_c_down = self.alphac_up, self.alphac_down
+        a_v_up, a_v_down = self.alphav_up, self.alphav_down
+        H = const.hbar2_over2m * k2 * np.array([
+        [a_c_up, 0, 0, 0],
+        [0, a_v_up, 0, 0],
+        [0, 0, a_c_down, 0],
+        [0, 0, 0, a_v_down]])
+        return H
+
+    def call(self, kx, ky):
+        """
+        To be used as a parent class for "jit-classes" we cannot define
+        the parent class with a '__call__' method. Instead, we define a
+        simple method named 'call' that needs to be called explicitly.
+        """
+        # H = np.array([
+        # [Eg_up + const.hbar2_over2m * alpha_c_up * k2, gamma_up*(kx+1j*ky), 0 , 0],
+        # [gamma_up*(kx-1j*ky), const.hbar2_over2m * alpha_v_up * k2, 0, 0],
+        # [0, 0, Eg_down + const.hbar2_over2m * alpha_c_down * k2, gamma_down*(kx+1j*ky)],
+        # [0, 0, gamma_down*(kx-1j*ky), const.hbar2_over2m * alpha_v_down * k2]])
+        return self.H_0() + self.H_kp1(kx,ky) + self.H_k2(kx,ky)
+
 fields4x4 = [
     ('alphac_up', float32),
     ('alphav_up', float32),
@@ -199,6 +280,111 @@ class H4x4_equal(H4x4_general):
         self.condBands = 2
 
 #===============================================================================
+fieldsKormanyosFabian = [
+    ('Egap', float32),
+    ('E_c', float32),
+    ('E_v', float32),
+    ('alpha_up', float32),
+    ('alpha_dn', float32),
+    ('beta_up', float32),
+    ('beta_dn', float32),
+    ('gamma', float32),
+    ('delta_c', float32),
+    ('delta_v', float32),
+    ('kappa_up', float32),
+    ('kappa_dn', float32),
+    ('valey', int32),
+    ('condBands', int32),
+    ('valeBands', int32),
+]
+
+@jitclass(fieldsKormanyosFabian)
+class H4x4_Kormanyos_Fabian:
+    """
+    The instances of this class cannot be passed to numba-compiled functions.
+    But, since it is a Python class it can be parent of other classes, it
+    includes 'jitclasses'.
+    """
+    def __init__(self, E_c, E_v, alpha_up, alpha_dn, beta_up, beta_dn, gamma, delta_c, delta_v, kappa_up, kappa_dn, valey):
+        # PARAMS OF THE HAMILTONIAN
+        self.Egap= E_c
+        self.E_c = E_c + np.abs(delta_c)
+        self.E_v = E_v - np.abs(delta_v)
+        self.alpha_up = alpha_up
+        self.alpha_dn = alpha_dn
+        self.beta_up = beta_up
+        self.beta_dn = beta_dn
+        self.gamma = gamma
+        self.delta_c = delta_c
+        self.delta_v = delta_v
+        self.kappa_up = kappa_up
+        self.kappa_dn = kappa_dn
+        ## META DATA OF THE HAMILTONIAN:
+        self.valey = valey        # K == 1, K' == -1
+        self.condBands = 2
+        self.valeBands = 2
+
+    def Pi(self):
+        gamma = self.gamma
+        valey = self.valey
+        Pix = (1.+0j) * valey * gamma * np.array([
+        [0,0,1,0],
+        [0,0,0,1],
+        [1,0,0,0],
+        [0,1,0,0]])
+        Piy = gamma * np.array([
+        [  0,  0, 1j,  0],
+        [  0,  0,  0, 1j],
+        [-1j,  0,  0,  0],
+        [  0,-1j,  0,  0]])
+        return Pix, Piy
+
+    def H_0(self):
+        E_v, E_c = self.E_v, self.E_c
+        H0 = np.array([
+        [E_v, 0, 0, 0],
+        [0, E_v, 0, 0],
+        [0, 0, E_c, 0],
+        [0, 0, 0, E_c]])
+        return H0
+
+    def H_SO(self):
+        d_v, d_c = self.delta_v, self.delta_c
+        HSO = np.array([
+        [d_v, 0, 0, 0],
+        [0,-d_v, 0, 0],
+        [0, 0, d_c, 0],
+        [0, 0, 0,-d_c]])
+        return self.valey * HSO
+
+    def H_kp1(self, kx, ky):
+        Pix, Piy = self.Pi()
+        return kx*Pix + ky*Piy
+
+    def H_kp2(self, kx, ky):
+        k2  = kx**2 + ky**2
+        k_p = kx + self.valey * 1j * ky
+        k_m = kx - self.valey * 1j * ky
+        if self.valey == 1:
+            a1, a2 = self.alpha_up, self.alpha_dn
+            b1, b2 = self.beta_up, self.beta_dn
+            kau, kad = self.kappa_up, self.kappa_dn
+        else:
+            a1, a2 = self.alpha_dn, self.alpha_up
+            b1, b2 = self.beta_dn, self.beta_up
+            kau, kad = self.kappa_dn, self.kappa_up
+        Hkp2 = np.array([
+        [a1*k2     ,         0,kau*k_p**2,         0],
+        [         0,     a2*k2,         0,kad*k_p**2],
+        [kau*k_m**2,         0,     b1*k2,         0],
+        [         0,kad*k_m**2,         0,     b2*k2]])
+        return Hkp2
+
+    def call(self, kx,ky):
+        return self.H_0() + self.H_SO() + self.H_kp1(kx, ky) + self.H_kp2(kx, ky)
+
+
+#===============================================================================
 fieldsRytova = [
     ('dk2', float32),
     ('r_0', float32),
@@ -222,6 +408,101 @@ class Rytova_Keldysh:
         Vkk_const = 1e6/(2*const.EPSILON_0)
         V =  1/(epsilon*q + r_0*q**2)
         return - Vkk_const * dk2/(2*np.pi)**2 * V
+
+#===============================================================================
+@njit
+def values_and_vectors(hamiltonian, kx_matrix, ky_matrix):
+    """
+    This function calculates all the eigenvalues-eingenvectors pairs and return them
+    into two multidimensional arrays named here as W and V respectively.
+
+    The dimensions of such arrays depend on the number of sampled points of the
+    reciprocal space and on the dimensions of our model Hamiltonian.
+
+    W.shape = (# kx-points, # ky-points, # rows of "H")
+    V.shape = (# kx-points, # ky-points, # rows of "H", # columns of "H")
+
+    For "W" the order is straightforward:
+    W[i,j,0]  = "the smallest eigenvalue for kx[i] and ky[j]"
+    W[i,j,-1] = "the biggest eigenvalue for kx[i] and ky[j]"
+
+    For "V" we have:
+    V[i,j,:,0] = "first eigenvector which one corresponds to the smallest eigenvalue"
+    V[i,j,:,-1] = "last eigenvector which one corresponds to the biggest eigenvalue"
+
+    """
+    n, m = kx_matrix.shape # WE'RE ASSUMING A SQUARE GRID EQUALLY SPACED
+    l = hamiltonian.condBands + hamiltonian.valeBands
+    W = np.zeros((n,m,l))
+    V = 1j * np.zeros((n,m,l,l))
+    W, V = eig_vals_vects(hamiltonian, W, V, kx_matrix, ky_matrix)
+    return W, V
+
+@njit
+def eig_vals_vects(H, W, V, Kx, Ky):
+    """
+    Remember that the arguments Kx and Ky are outputs
+    of "np.meshgrid". Here we have adopted the default
+    order where
+
+    Kx[i,0], Kx[i,-1] == min_kx, max_kx
+    Ky[0,j], Ky[-1,j] == min_ky, max_ky
+
+    In this way, the nested for-loop below will sweep
+    all the kx-values for a fixed ky-value, i.e. the inner-loop
+    while the ky-value will change following the outer-loop.
+    """
+    ny, nx = Kx.shape # WE'RE ASSUMING A SQUARE GRID EQUALLY SPACED
+    for i in range(ny):
+        for j in range(nx):
+            W[i,j,:], V[i,j,:,:] = LA.eigh(H.call(Kx[i,j], Ky[i,j]))
+    return W,V
+
+
+def kinetic_wannier(Ham, kx_matrix, ky_matrix):
+    kx_flat   = kx_matrix.flatten()
+    ky_flat   = ky_matrix.flatten()
+    n_points  = len(kx_flat)
+    K_Wannier = np.empty(n_points)
+    for ind in range(n_points):
+        K_Wannier[ind] = Ham.call(kx_flat[ind], ky_flat[ind])
+    return np.diagflat(K_Wannier)
+
+
+def main():
+    k = np.linspace(-1,1,10)
+    dk2 = (k[1] - k[0])**2
+    Kx, Ky = np.meshgrid(k,k)
+
+    Ham_params = dict(
+    E_c         = 2.42e3,                    # float : H_0   [meV]
+    E_v         = 0.0,                       # float : H_0   [meV]
+    alpha_up    = -2.16e1,                   # float : H_2kp [meV nm²]
+    alpha_dn    = -3.77e1,                  # float : H_2kp [meV nm²]
+    beta_up     = 6.81e1,                    # float : H_2kp [meV nm²]
+    beta_dn     = 4.89e1,                    # float : H_2kp [meV nm²]
+    gamma       = 2.60e2,                    # float : H_1kp [meV nm]
+    delta_c     = 0.0185e3,                  # float : H_SO  [meV]
+    delta_v     = 0.2310e3,                  # float : H_SO  [meV]
+    kappa_up    = -1.36e1,                   # float : H_2kp [meV nm²]
+    kappa_dn    = -1.14e1,                   # float : H_2kp [meV nm²]
+    valey       = 1,                         # int   : 1 == K-point; -1 == K'-point
+    )
+    HKF = H4x4_Kormanyos_Fabian(**Ham_params)
+    # H4 = H4x4(alphac, alphav, E_gap, gamma, alphac, alphav, E_gap, gamma)
+    H4 = H4x4_equal(alphac, alphav, E_gap, gamma)
+    # print(H4.Pi().shape)
+    # H2 = H2x2(alphac, alphav, E_gap, gamma)
+    # print(H2.call(0,0))
+
+
+if __name__=='__main__':
+    main()
+
+
+
+
+
 
 # @njit
 # def potential_average(V, k_vec_diff, N_submesh, submesh_radius):
@@ -321,68 +602,3 @@ class Rytova_Keldysh:
 #
 #     return V_main
 #
-
-
-#===============================================================================
-@njit
-def values_and_vectors(hamiltonian, kx_matrix, ky_matrix):
-    """
-    This function calculates all the eigenvalues-eingenvectors pairs and return them
-    into two multidimensional arrays named here as W and V respectively.
-
-    The dimensions of such arrays depend on the number of sampled points of the
-    reciprocal space and on the dimensions of our model Hamiltonian.
-
-    W.shape = (# kx-points, # ky-points, # rows of "H")
-    V.shape = (# kx-points, # ky-points, # rows of "H", # columns of "H")
-
-    For "W" the order is straightforward:
-    W[i,j,0]  = "the smallest eigenvalue for kx[i] and ky[j]"
-    W[i,j,-1] = "the biggest eigenvalue for kx[i] and ky[j]"
-
-    For "V" we have:
-    V[i,j,:,0] = "first eigenvector which one corresponds to the smallest eigenvalue"
-    V[i,j,:,-1] = "last eigenvector which one corresponds to the biggest eigenvalue"
-
-    """
-    n, m = kx_matrix.shape # WE'RE ASSUMING A SQUARE GRID EQUALLY SPACED
-    l = hamiltonian.condBands + hamiltonian.valeBands
-    W = np.zeros((n,m,l))
-    V = 1j * np.zeros((n,m,l,l))
-    W, V = eig_vals_vects(hamiltonian, W, V, kx_matrix, ky_matrix)
-    return W, V
-
-@njit
-def eig_vals_vects(H, W, V, Kx, Ky):
-    n, m = Kx.shape # WE'RE ASSUMING A SQUARE GRID EQUALLY SPACED
-    for i in range(n):
-        for j in range(m):
-            W[i,j,:], V[i,j,:,:] = LA.eigh(H.call(Kx[i,j], Ky[i,j]))
-    return W,V
-
-
-def main():
-    k = np.linspace(-1,1,10)
-    dk2 = (k[1] - k[0])**2
-    Kx, Ky = np.meshgrid(k,k)
-
-    # eigenvalues, eigenvectors = values_and_vectors(H,Kx,Ky)
-    # print(eig_vals(H))
-    # print(eigenvalues)
-    # alphac = 0
-    # alphav = 0
-    # E_gap = 2.4e3 # meV ~ 2.4 eV
-    # gamma = 2.6e2 # meV*nm ~ 2.6 eV*AA
-    # H4 = H4x4(alphac, alphav, E_gap, gamma, alphac, alphav, E_gap, gamma)
-    # H2 = H2x2(alphac, alphav, E_gap, gamma)
-    # print(H2.call(0,0))
-
-
-
-
-
-
-
-
-if __name__=='__main__':
-    main()
