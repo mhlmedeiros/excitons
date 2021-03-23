@@ -301,9 +301,6 @@ fieldsKormanyosFabian = [
 @jitclass(fieldsKormanyosFabian)
 class H4x4_Kormanyos_Fabian:
     """
-    The instances of this class cannot be passed to numba-compiled functions.
-    But, since it is a Python class it can be parent of other classes, it
-    includes 'jitclasses'.
     """
     def __init__(self, E_c, E_v, alpha_up, alpha_dn, beta_up, beta_dn, gamma, delta_c, delta_v, kappa_up, kappa_dn, valey):
         # PARAMS OF THE HAMILTONIAN
@@ -382,6 +379,86 @@ class H4x4_Kormanyos_Fabian:
 
     def call(self, kx,ky):
         return self.H_0() + self.H_SO() + self.H_kp1(kx, ky) + self.H_kp2(kx, ky)
+
+
+#===============================================================================
+fields3Bands = [
+    ('E0', float32),
+    ('E1', float32),
+    ('E2', float32),
+    ('m0', float32),
+    ('m1', float32),
+    ('m2', float32),
+    ('P10', float32),
+    ('P20', float32),
+    ('P21', float32),
+    ('condBands', int32),
+    ('valeBands', int32),
+]
+
+@jitclass(fieldsKormanyosFabian)
+class H3x3:
+    """
+    """
+    def __init__(self, E0, E1, E2, m0, m1, m2, P10, P20, P21):
+        # PARAMS OF THE HAMILTONIAN
+        self.E0 = E0
+        self.E1 = E1
+        self.E2 = E2
+        self.m0 = m0
+        self.m1 = m1
+        self.m2 = m2
+        self.P10 = P10
+        self.P20 = P20
+        self.P21 = P21
+        ## META DATA OF THE HAMILTONIAN:
+        self.condBands = 2
+        self.valeBands = 1
+
+    def Pi(self):
+        P10, P20 = self.P10, self.P20
+        Pix = (1.+0j) * np.array([
+        [   0,   0, P20],
+        [   0,   0, P10],
+        [ P20, P10,   0]])
+        Piy = 1j * np.array([
+        [   0,   0,-P20],
+        [   0,   0,+P10],
+        [+P20,-P10,   0]])
+        return Pix, Piy
+
+    def H_0(self):
+        E0, E1, E2 = self.E0, self.E1, self.E2
+        H0 = np.array([
+        [E2, 0, 0],
+        [0, E1, 0],
+        [0, 0, E0]])
+        return H0
+
+    def H_kp1(self, kx, ky):
+        Pix, Piy = self.Pi()
+        Hcc = (kx + 1j*ky) * np.array([
+        [  0,P21, 0],
+        [P21,  0, 0],
+        [  0,  0, 0]])
+        return kx*Pix + ky*Piy + Hcc
+
+    def H_k2(self, kx, ky):
+        k2  = kx**2 + ky**2
+        P10, P20, P21 = self.P10, self.P20, self.P21
+        E0, E1, E2 = self.E0, self.E1, self.E2
+        m0, m1, m2 = self.m0, self.m1, self.m2
+        F0 =  1/m0 - (1/const.hbar2_over2m)*(P20**2/(E0-E2) + P10**2/(E0-E1))
+        F1 =  1/m1 - (1/const.hbar2_over2m)*(P21**2/(E1-E2) + P10**2/(E1-E0))
+        F2 =  1/m2 - (1/const.hbar2_over2m)*(P21**2/(E2-E1) + P20**2/(E2-E0))
+        Hk2 = const.hbar2_over2m * k2 * np.array([
+        [ F2,  0,  0],
+        [  0, F1,  0],
+        [  0,  0, F0]])
+        return Hk2
+
+    def call(self, kx, ky):
+        return self.H_0() + self.H_kp1(kx, ky) + self.H_kp2(kx, ky)
 
 
 #===============================================================================
