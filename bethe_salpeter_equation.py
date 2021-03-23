@@ -374,9 +374,9 @@ def X_k1k2(k1_ind, k2_ind, Vectors, Values, r_0, d, Ham):
 
     cond_inds = list(range(-1,-1*(cond_n+1),-1))    # [ 0, 1, ... ,  cond_n-1] # NEW VERSION
     vale_inds = list(range(vale_n))                 # [-1,-2, ... , -vale_n]   # NEW VERSION
-    if k1_ind==0 and k2_ind==0:
-        print('cond_inds = ', cond_inds)
-        print('vale_inds = ', vale_inds)
+    # if k1_ind==0 and k2_ind==0:
+    #     print('cond_inds = ', cond_inds)
+    #     print('vale_inds = ', vale_inds)
     #===================================================================#
     #                       main loop of this function:                 #
     #===================================================================#
