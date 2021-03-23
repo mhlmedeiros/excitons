@@ -2,6 +2,7 @@
 
 import numpy as np
 import scipy.linalg as LA
+import scipy.sparse.linalg as LAS
 import hamiltonians as ham
 import wannier_coulomb_numba as wannier
 import treat_files as files
@@ -46,9 +47,15 @@ def build_bse_matrix(hamiltonian, potential_obj, exchange, r_0, d_chosen, grid_t
 
     return BSE_MATRIX
 
-def diagonalize_bse(BSE_MATRIX):
-    # print("\tDiagonalizing the BSE matrix...")
-    return LA.eigh(BSE_MATRIX)
+def diagonalize_bse(BSE_MATRIX, n_states, arpack=False):
+    print("\tDiagonalizing the BSE matrix...")
+    if arpack:
+        values, vectors = LAS.eigsh(BSE_MATRIX, k=n_states, which='SA')
+    else:
+        v, w = LA.eigh(BSE_MATRIX)
+        values  = v[ : n_states]
+        vectors = w[ :, : n_states]
+    return values, vectors
 
 # ========================================================================= #
 ##                            MAIN FUNCTION
@@ -61,10 +68,8 @@ def main():
     # =============================== #
     ##          Outuput options:
     # =============================== #
-    save = True
+    save = False
     preview = True
-
-
 
     # =============================== #
     ##     READING THE INPUT FILE:
@@ -123,14 +128,13 @@ def main():
     # =============================== #
     #       DIAGONALIZATION:
     # =============================== #
-    values, vectors = diagonalize_bse(MAIN_MATRIX)
+    values, vectors = diagonalize_bse(MAIN_MATRIX, n_rec_states, arpack=False)
 
     # =============================== #
     ## PLACE HOLDERS FOR BSE-RESULTS:
     # =============================== #
-    # print(dir(Ham))
-    eigvals_holder = values[:n_rec_states] - hamiltonian.Egap
-    eigvecs_holder = vectors[:,:n_rec_states]
+    eigvals_holder = values - hamiltonian.Egap
+    eigvecs_holder = vectors
 
     # =============================== #
     #       SAVING THE RESULTS:
@@ -141,7 +145,7 @@ def main():
     if preview:
         print("Non-extrapolated binding-energies:")
         print("\t[#]\t|\tValue [meV]")
-        number_of_energies_to_show = 15
+        number_of_energies_to_show = min(15, n_rec_states)
         for val_index in range(number_of_energies_to_show):
             print("\t%i\t|\t%.2f" % (val_index, values[val_index]-hamiltonian.Egap))
 
