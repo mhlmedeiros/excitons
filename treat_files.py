@@ -35,8 +35,8 @@ def decide_ham():
 
 def read_params(specific_file):
     """
-    This function open a 'specific_file', reads and parses the
-    information contained in the input file.
+    This function open the 'specific_file', reads and parses the
+    information contained in the 'specific_file'.
 
     The formatation of the file must follow the structure:
 
@@ -52,13 +52,11 @@ def read_params(specific_file):
     lines = file.readlines()
     file.close()
     params = {}
-
     for line in lines:
         list_line = line.split()
         if len(list_line) == 0 or list_line[0]=='##': continue
         elif list_line[0] == 'Ham': params[list_line[0]] = eval('ham.'+list_line[2])
         else: params[list_line[0]] = eval(list_line[4])(list_line[2])
-
     return params
 
 def read_file(specific):
