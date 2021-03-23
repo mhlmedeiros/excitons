@@ -160,3 +160,67 @@ of the BSE-matrix (😠!).
 * The other tests need to be re-run: due to existence of complex matrix-elements in BSE-matrix (😞).    
 
 ---
+
+
+## Speeding up the code
+
+### The Building problem (Numba $\rightarrow$ Fortran)
+
+In my personal PC (where I can install any package I want) I've been using the Python-package named **Numba**. In summary, it takes some selected functions (selected by the developer using decorators) and perform what is called just in time (JIT) compilation. It really helpful but... it is not installed in the university clusters.
+
+One possible solution is to rewrite the computational intensive functions into Fortran procedures (functions, subroutines, modules) and translate it back to python using **f2py**. This was the strategy adopted to run the excitons code using the Wannier Hamiltonian.
+
+To "compilate" the Fortran module and turn it a importable python module I used the following command-line:
+
+`f2py -c -m potential rytova_keldysh.f95`
+
+To call the content in the python code use
+
+```python
+import potential
+V_single = potential.potential_average(kx, ky, dk, Nsub, eps, r0)
+V_total  = potential.build_potential_matrix(kx_flat, ky_flat,
+                                            N_total, N_sub,
+                                            eps, r_0)
+```
+**Actually it is safer to call:**
+
+```python
+import potential
+print(dir(potential))
+print(potential.build_potential_matrix.__doc__)
+print(potential.potential_average.__doc__)
+```
+
+**to see the exactly the arguments required in each function.**
+
+Some times I compile using the following command:
+
+`f2py -c -m potential rytova_keldysh.f95 only: build_potential_matrix`
+
+to make only the `build_potential_matrix` visible to the python code.
+
+Notice, however, this Fortran module (`rytova_keldysh.f95`) solve only the problem with the potential. The mixing term ($\Delta$'s) and the exchange term have not been implemented yet. 😅
+
+## The diagonalization part of the fight
+
+Once the building part of the code ends, the next battle is in the field of eigenvalues and eigenvalues. To solve for the eigenstuff I've been using the `numpy.eigh()` function. It is very good tool for most of the situations, but in that occasions where one only needs the first (smallest) eigenvalues it turns out to be a overkill option.
+
+The smartest option is to use something like the Lanczos algorithm or (more generally) the Arnoldi algorithm. There is a package written in Fortran that does exactly that (ARPACK) and it is present in scipy (Got sai danke). However, before using that it is necessary to transform the dense matrix into a sparse one. So the workflow goes like that:
+
+```python
+from scipy import sparse
+...
+H               = foo(**args)            # function that generate a dense_matrix
+sH              = sparse.csr_matrix(H)   # convert into a sparse matrix
+Values, Vectors = sparse.linalg.eigs(A, k=6, which='LM')
+```
+
+`which` **k eigenvectors** and eigenvalues to find:
+
+* ‘LM’ : largest magnitude
+* ‘SM’ : smallest magnitude
+* ‘LR’ : largest real part
+* ‘SR’ : smallest real part
+* ‘LI’ : largest imaginary part
+* ‘SI’ : smallest imaginary part
