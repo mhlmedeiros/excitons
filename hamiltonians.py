@@ -4,8 +4,6 @@ import physical_constants as const
 from numba import jit, njit, int32, float32
 from numba.experimental import jitclass
 
-list_of_hamiltonians = ['H2x2','H4x4','H4x4_equal']
-
 #===============================================================================
 # NOTE THAT WE CANNOT INHERITATE FROM A "jitclass".
 # SO, AN WORKAROUND IS TO DEFINE A PYTHON CLASS THAT BEHAVES LIKE A
@@ -383,6 +381,7 @@ class H4x4_Kormanyos_Fabian:
 
 #===============================================================================
 fields3Bands = [
+    ('Egap', float32),
     ('E0', float32),
     ('E1', float32),
     ('E2', float32),
@@ -396,7 +395,7 @@ fields3Bands = [
     ('valeBands', int32),
 ]
 
-@jitclass(fieldsKormanyosFabian)
+@jitclass(fields3Bands)
 class H3x3:
     """
     """
@@ -411,6 +410,7 @@ class H3x3:
         self.P10 = P10
         self.P20 = P20
         self.P21 = P21
+        self.Egap = min((E1-E0), (E2-E0))
         ## META DATA OF THE HAMILTONIAN:
         self.condBands = 2
         self.valeBands = 1
@@ -435,13 +435,19 @@ class H3x3:
         [0, 0, E0]])
         return H0
 
-    def H_kp1(self, kx, ky):
+    def H_cc(self):
+        P21 = self.P21
+        Hcc = np.array([
+        [  0, P21, 0],
+        [P21,   0, 0],
+        [  0,   0, 0*P21]]) # it makes no sense but without this it doesn't work
+        return Hcc
+
+    def H_k1(self, kx, ky):
+        kplus = (kx + 1j*ky)
         Pix, Piy = self.Pi()
-        Hcc = (kx + 1j*ky) * np.array([
-        [  0,P21, 0],
-        [P21,  0, 0],
-        [  0,  0, 0]])
-        return kx*Pix + ky*Piy + Hcc
+        Hcc = self.H_cc()
+        return kx*Pix + ky*Piy + kplus*Hcc
 
     def H_k2(self, kx, ky):
         k2  = kx**2 + ky**2
@@ -458,8 +464,7 @@ class H3x3:
         return Hk2
 
     def call(self, kx, ky):
-        return self.H_0() + self.H_kp1(kx, ky) + self.H_kp2(kx, ky)
-
+        return self.H_0() + self.H_k2(kx, ky) + self.H_k1(kx, ky)
 
 #===============================================================================
 fieldsRytova = [
@@ -547,37 +552,45 @@ def kinetic_wannier(Ham, kx_matrix, ky_matrix):
 
 
 def main():
-    k = np.linspace(-1,1,10)
-    dk2 = (k[1] - k[0])**2
-    Kx, Ky = np.meshgrid(k,k)
-
-    Ham_params = dict(
-    E_c         = 2.42e3,                    # float : H_0   [meV]
-    E_v         = 0.0,                       # float : H_0   [meV]
-    alpha_up    = -2.16e1,                   # float : H_2kp [meV nm²]
-    alpha_dn    = -3.77e1,                  # float : H_2kp [meV nm²]
-    beta_up     = 6.81e1,                    # float : H_2kp [meV nm²]
-    beta_dn     = 4.89e1,                    # float : H_2kp [meV nm²]
-    gamma       = 2.60e2,                    # float : H_1kp [meV nm]
-    delta_c     = 0.0185e3,                  # float : H_SO  [meV]
-    delta_v     = 0.2310e3,                  # float : H_SO  [meV]
-    kappa_up    = -1.36e1,                   # float : H_2kp [meV nm²]
-    kappa_dn    = -1.14e1,                   # float : H_2kp [meV nm²]
-    valey       = 1,                         # int   : 1 == K-point; -1 == K'-point
-    )
-    HKF = H4x4_Kormanyos_Fabian(**Ham_params)
-    # H4 = H4x4(alphac, alphav, E_gap, gamma, alphac, alphav, E_gap, gamma)
-    H4 = H4x4_equal(alphac, alphav, E_gap, gamma)
+    # k = np.linspace(-1,1,10)
+    # dk2 = (k[1] - k[0])**2
+    # Kx, Ky = np.meshgrid(k,k)
+    #
+    # Ham_params = dict(
+    # E_c         = 2.42e3,                    # float : H_0   [meV]
+    # E_v         = 0.0,                       # float : H_0   [meV]
+    # alpha_up    = -2.16e1,                   # float : H_2kp [meV nm²]
+    # alpha_dn    = -3.77e1,                  # float : H_2kp [meV nm²]
+    # beta_up     = 6.81e1,                    # float : H_2kp [meV nm²]
+    # beta_dn     = 4.89e1,                    # float : H_2kp [meV nm²]
+    # gamma       = 2.60e2,                    # float : H_1kp [meV nm]
+    # delta_c     = 0.0185e3,                  # float : H_SO  [meV]
+    # delta_v     = 0.2310e3,                  # float : H_SO  [meV]
+    # kappa_up    = -1.36e1,                   # float : H_2kp [meV nm²]
+    # kappa_dn    = -1.14e1,                   # float : H_2kp [meV nm²]
+    # valey       = 1,                         # int   : 1 == K-point; -1 == K'-point
+    # )
+    # HKF = H4x4_Kormanyos_Fabian(**Ham_params)
+    # # H4 = H4x4(alphac, alphav, E_gap, gamma, alphac, alphav, E_gap, gamma)
+    # H4 = H4x4_equal(alphac, alphav, E_gap, gamma)
     # print(H4.Pi().shape)
-    # H2 = H2x2(alphac, alphav, E_gap, gamma)
-    # print(H2.call(0,0))
+    params_test = dict(
+        E0 = 0,
+        E1 = 2.4,
+        E2 = 2.5,
+        m0 =-0.6,
+        m1 = 0.4,
+        m2 = 0.6,
+        P10 = 2.0,
+        P20 = 0.5,
+        P21 = 0.5,
+    )
+    H = H3x3(**params_test)
+    print(H.call(0,0))
 
 
 if __name__=='__main__':
     main()
-
-
-
 
 
 
