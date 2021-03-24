@@ -2,14 +2,14 @@
 
 import os
 import bse_solver
-# import absorption
+import absorption
 
 # ========================================================================= #
 ##                            MAIN FUNCTION
 # ========================================================================= #
 def main():
     bse_solver.main()
-    # absorption.main()
+    absorption.main()
     # print(not os.path.isfile('infile_absorption.txt'))
 
 if __name__ == '__main__':

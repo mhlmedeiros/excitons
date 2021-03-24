@@ -1,19 +1,11 @@
-import os
+import os, sys
 import numpy as np
 import numpy.linalg as LA
-import matplotlib.pyplot as plt
-import matplotlib as mpl
-from matplotlib import cm
 import itertools as it
 import physical_constants as const
 import wannier_coulomb_numba as wannier
 import hamiltonians as ham
 import treat_files as files
-
-plt.rcParams.update({
-    "text.usetex": True,
-    "font.serif": ["Palatino"],
-    })
 
 class Gamma_Lorentz_E_var:
     def __init__(self, Gamma1, Gamma2, Gamma3, Egap):
@@ -126,124 +118,46 @@ def broadening(Energies, Deltas, Gamma_Lorentz, padding, N_points_broadening):
 
 #==============================================================================#
 
-def plot_deltas_absorption(energies_without_discount, A_p_sums):
-    fig, ax = plt.subplots(figsize=(10,8))
-    ax.scatter(energies_without_discount, A_p_sums,s=100)
-    ax.vlines(x = energies_without_discount, ymin = 0 * A_p_sums, ymax = A_p_sums,colors='k')
-    ax.hlines(y = 0, xmin = 500, xmax = 1400, colors = 'k')
-    ax.set_title(r"Absorption spectra", fontsize=22)
-    ax.tick_params(axis='x', labelsize=22)
-    ax.tick_params(axis='y', labelsize=22)
-    ax.yaxis.offsetText.set_fontsize(20)
-    deltax = -15
-    deltay = 0.5
-    for i in [0,3,8,15]:
-        ax.text(energies_without_discount[i]+deltax,
-                 A_p_sums[i]+deltay,
-                 "%.1f" % (A_p_sums[i]), color='k', fontsize=20)
-    ax.set_xlim([500,1310])
-    ax.ticklabel_format(axis="y", style="sci", scilimits=(0,0))
-    # ax.set_xlim([1110,1240])
-    ax.set_xlabel(r"$\hbar \omega$ [meV]", fontsize=24)
-    # ax.set_xlabel(r"$\hbar \omega - E_{gap}$ [meV]", fontsize=24)
-    ax.set_ylabel(r"A($\omega$)", fontsize=24)
-    ax.set_ylim([-0.02*A_p_sums[0] , A_p_sums[0] + 2*deltay])
-    ax.grid()
-    plt.show()
-
-    return 0
-
-def plot_absorption(energies_without_discount, absorption_conv, ax, Egap=None):
-    ax.plot(energies_without_discount, absorption_conv, label="Marcos", linewidth=2.5)
-    # ax.vlines(x=1230, ymin=-1e3, ymax=1.5e4, colors=['red'], linestyles=['--'], label='')
-    ax.set_title(r"Absorption spectra", fontsize=22)
-    ax.tick_params(axis='x', labelsize=22)
-    ax.tick_params(axis='y', labelsize=22)
-    ax.yaxis.offsetText.set_fontsize(20)
-    ax.set_xlabel(r"$\hbar \omega$ [meV]", fontsize=24)
-    # ax.set_xlabel(r"$\hbar \omega - E_{gap}$ [meV]", fontsize=24)
-    ax.set_ylabel(r"A($\omega$)", fontsize=24)
-    # ax.ticklabel_format(axis="y", style="sci", scilimits=(0,0))
-    # ax.set_xlim([500,1500])
-    # ax.set_ylim([-5e-1,9])
-    if Egap:
-        ax.vlines(x=Egap, ymin=-0.5, ymax=9, colors=['k'], linestyles=['--'], label=r'$E_{gap}$')
-        plt.legend(fontsize=24, loc="upper center")
-    # plt.show()
-    return ax
-
-def plot_absolute_wave(eigvecs):
-    kx = np.linspace(-5,5,101)
-    psi_1s = eigvecs[:,0,0].reshape((101,101))
-    psi_2s = eigvecs[:,3,0].reshape((101,101))
-    pico1 = np.abs(psi_1s[50,50])
-    pico2 = np.abs(psi_2s[50,50])
-    fig, ax = plt.subplots(figsize=(10,8))
-    ax.plot(kx, np.abs(psi_1s[:,50]), marker='o',linewidth=2, label="1s")
-    ax.plot(kx, np.abs(psi_2s[:,50]), marker='o',linewidth=2, label="2s")
-    ax.yaxis.offsetText.set_fontsize(20)
-    ax.xaxis.offsetText.set_fontsize(20)
-
-    ax.tick_params(axis='x', labelsize=22)
-    ax.tick_params(axis='y', labelsize=22)
-    ax.set_xlabel(r"k [nm$^{-1}$]", fontsize=24)
-    ax.set_ylabel(r"$|\psi(k_x,k_y=0)|$", fontsize=24)
-    ax.text(1.5, 1.1*pico1, r"%.4f" % (pico1), color='black', fontsize=20) #
-    ax.annotate("",xy=(0, pico1), xytext=(1.5, 1.1*pico1), arrowprops=dict(width=0.3,shrink=0.05,color='C0'))
-    ax.text(1.5, 0.9*pico2, r"%.4f" % (pico2), color='black', fontsize=20) #
-    ax.annotate("",xy=(0, pico2), xytext=(1.5, 0.9*pico2), arrowprops=dict(width=0.3,shrink=0.05,color='C1'))
-    ax.legend(fontsize=22)
-    plt.tight_layout()
-    plt.show()
-
-def plot_dat_together(file_path_name, ax):
-    E, abs_pol_x = [],[]
-    with open(file_path_name, 'r') as file:
-        line = 0 # start the counter
-        for l in file:
-            line += 1
-            if line == 1:
-                continue
-                # print(*l.split())
-            else:
-                E.append(float(l.split()[0]))
-                abs_pol_x.append(float(l.split()[1]))
-        E = 1E3 * np.array(E) # From eV to meV
-        abs_pol_x = np.array(abs_pol_x)
-        ax.plot(E, abs_pol_x, "o",
-                            linewidth=2,
-                            color='C3',
-                            markevery=1,
-                            markersize=5,
-                            label="Paulo")
-    return 0
-
-
 def main():
-    print('\n******************************************************')
-    print("                     ABSORPTION                   ")
-    print('******************************************************\n')
+    # print('\n******************************************************')
+    # print("                     ABSORPTION                   ")
+    # print('******************************************************\n')
 
     # =============================== #
     ##     READING THE INPUT FILES:
     # =============================== #
     #*********************************#
-    output_name = 'results_absorption'
-    if files.verify_output(output_name) == 'N': return 0
+    # output_name = 'results_absorption'
+    # if files.verify_output(output_name) == 'N': return 0
     #*********************************#
     # verify the existence of main input file: 'infile.txt'
     main_input_file =  'infile.txt'
-    files.verify_essential_file(main_input_file)
+    # files.verify_essential_file(main_input_file)
 
     # verify the existence of the absorption input file: 'absorption_infile.txt'
     absorption_input_file = 'absorption_infile.txt'
-    files.verify_file_or_template(absorption_input_file)
+    # files.verify_file_or_template(absorption_input_file)
 
     # read both files
     # params_master = files.read_file(main_input_file)
     # params_abs    = files.read_file(absorption_input_file)
     params_master = files.read_params(main_input_file)
     params_abs    = files.read_params(absorption_input_file)
+
+    # =============================== #
+    ##  TERMINAL OPTIONS (OVERRIDE):
+    # =============================== #
+    if len(sys.argv) == 4:
+        # USED TO GENERATE THE DATA BASIS USING WANNIER EQUATION
+        return 0 # THERE IS NO ABSORPTION FOR WANNIER EQUATION RESULTS
+    elif len(sys.argv) == 2:
+        # USED TO GENERATE THE DATA FOR THE 3-BANDS MODEL
+        # USED TO GENERATE THE DATA FOR THE 3-BANDS MODEL
+        epsilon_sub         = float(sys.argv[1])
+        params_master['epsilon']   = epsilon_sub
+        output_name = "results_absorption_3Bands_eps_{}".format(epsilon_sub)
+    else:
+        output_name = 'results_bse'
 
 
     # Ham, gamma, Egap, r_0, mc, mv, alpha_option, epsilon, exchange, d_chosen, L_k, n_mesh, n_sub, submesh_radius, n_rec_states = files.from_dic_to_var(**params_master)
@@ -302,7 +216,6 @@ def main():
     eigvals, eigvecs = results_arrays(data)
 
 
-
     # =============================== #
     ##     CALCULATE THE ABSORPTION
     # =============================== #
@@ -323,14 +236,7 @@ def main():
     files.output_file(output_name, data_dic_to_save)
 
 
-    # plot_absolute_wave(eigvecs)
-    # plot_deltas_absorption(x, Abs_raw)
-    fig, ax = plt.subplots(figsize=(10,8))
-    plot_absorption(E_broad, Abs_broad, ax)
-    # plot_dat_together(data_paulo, ax)
-    # plt.legend(fontsize=24, loc="upper center")
-    plt.savefig('absorption_broad.png')
-    plt.show()
+
 
 
 if __name__ == '__main__':
