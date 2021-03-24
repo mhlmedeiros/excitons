@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 
 import sys
-import time
 import numpy as np
 import scipy.linalg as LA
-import matplotlib.pyplot as plt
-from matplotlib import cm
 import itertools as it
 from numba import njit
 import hamiltonians as ham
@@ -398,18 +395,6 @@ def X_k1k2_cv(k1_ind, k2_ind, c1_ind, c2_ind, v1_ind, v2_ind, Ham, Vectors_flatt
     return vA.dot(vB)
 
 
-# ============================================================================= #
-##              Visualization:
-# ============================================================================= #
-def plot_wave_function(eigvecs_holder, state_preview):
-    N = int(np.sqrt(eigvecs_holder.shape[0]))
-    wave_funct = np.reshape(eigvecs_holder[:, state_preview, 0],(N,N))
-    fig, ax = plt.subplots(figsize=(10,12))
-    mapping = ax.pcolormesh(abs(wave_funct)**2 , cmap=cm.inferno)
-    fig.colorbar(mapping, ax=ax)
-    plt.show()
-
-
 def main():
     # ========================================================================= #
     ##              Outuput options:
@@ -636,11 +621,6 @@ def main():
     if preview:
         print("Non-extrapolated binding-energies:")
         print("\t[#]\t|\tValue [meV]")
-        # fig, ax = plt.subplots(figsize=(10,10))
-        # ax.imshow(np.(W_non_diag))
-        # plt.show()
-        # state_preview = 0
-        # plot_wave_function(eigvecs_holder, state_preview)
         number_of_energies_to_show = 30
         for val_index in range(number_of_energies_to_show):
             print("\t%i\t|\t%.2f" % (val_index, values[val_index]-Egap))
