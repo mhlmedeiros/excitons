@@ -9,35 +9,24 @@ from matplotlib import cm
 import itertools as it
 from numba import njit
 import hamiltonians as ham
-import wannier_coulomb_numba as wannier
+import physical_constants as const
 
-EPSILON_0 = 55.26349406             # e^2 GeV^{-1}fm^{-1} == e^2 (1e9 eV 1e-15 m)^{-1}
-HBAR = 1.23984193/(2*np.pi)         # eV 1e-6 m/c
-M_0  = 0.51099895000                # MeV/c^2
-hbar2_over2m = HBAR**2/(2*M_0)*1e3  # meV nm^2
-
-def st_time(func):
+# ============================================================================= #
+##                      FUNCTION TO CREATE A K-SPACE GRID
+# ============================================================================= #
+def define_grid_k(size_pos, n_points):
     """
-    st decorator to calculate the total time of a func
+    "whole interval" = [-size_pos, +size_pos]
+
+    sizes_positive: final of the interval of wave number; unit = nm^{-1}
+
+    Nk: number of discrete points in the whole interval.
     """
-    def st_func(*args, **keyArgs):
-        t1 = time.time()
-        r = func(*args, **keyArgs)
-        t2 = time.time()
-        print("Function=%s, Time=%s" % (func.__name__, t2 - t1))
-        return r
-    return st_func
-
-@njit
-def split_values(values_array):
-    # This function splits the eigenvalues into "condution" and "valence" sets
-
-    # The "conduction_values" has stricly positive values
-    conduction_values = [value for value in values_array if value > 0]
-
-    # The negative or null values are labeled as "valence_values"
-    valence_values = [value for value in values_array if value <= 0]
-    return conduction_values, valence_values
+    k = np.linspace(-size_pos, size_pos, n_points)
+    delta_k = k[1] - k[0]
+    delta_k_sqrd = delta_k**2
+    kx_matrix, ky_matrix = np.meshgrid(k,k)
+    return kx_matrix, ky_matrix, delta_k_sqrd
 
 # ============================================================================= #
 ##              BSE-Matrix Diagonal elements (no potential nor exchange):
@@ -100,7 +89,6 @@ def include_deltas(V_RK, Values, Vectors, N_submesh, Ham, scheme='H'):
 
     """
     # It is crucial to know how many conduction and valence bands we have:
-    # cond_v, vale_v = split_values(Values[0,0,:]) # Just to set the size of the holder matrix
     cond_n, vale_n = Ham.condBands, Ham.valeBands
 
     S = cond_n * vale_n # This is the amount of combinations of conduction and valence bands
@@ -151,7 +139,6 @@ def delta_k1k2(k1_ind, k2_ind, Vectors, Values, Ham):
 
     # To know how many conduction and valence bands we have
     # I SUPPOSE IT WILL BE FIXED OVER THE WHOLE RECIPROCAL SPACE
-    # cond_vs, vale_vs = split_values(Values[0,0,:])
     cond_n, vale_n = Ham.condBands, Ham.valeBands
     Delta_k1_k2 = 1j * np.zeros((cond_n*vale_n)**2)
 
@@ -209,40 +196,29 @@ def delta_k1k2_cv(k1_ind, k2_ind, c1_ind, c2_ind, v1_ind, v2_ind, Vectors_flatte
 # ============================================================================= #
 ##              Rytova-Keldysh:
 # ============================================================================= #
-@njit
-def potential_average(V, k_vec_diff, N_submesh, submesh_radius):
+def potential_matrix(V, kx_matrix, ky_matrix, N_submesh, submesh_radius=0):
     """
-    As we've been using a square lattice, we can use
-    * w_x_array == w_y_array -> w_array
-    * with limits:  -dw/2, +dw/2
-    * where: dw = sqrt(dk2)
+    This function generates a square matrix that contains the values of
+    the potential for each pair of vectors k & k'.
+
+    Dimensions = Nk x Nk
+    where Nk = (Nk_x * Nk_y)
     """
-    k_diff_norm = np.sqrt(k_vec_diff[0]**2 + k_vec_diff[1]**2)
-    dk = np.sqrt(V.dk2)
-    threshold = submesh_radius * dk
+    kx_flat = kx_matrix.flatten()
+    ky_flat = ky_matrix.flatten()
 
-    # print('threshold: ', threshold)
-    # print('k_diff: ', k_diff_norm)
+    # OUT OF DIAGONAL: SMART SCHEME
+    # N_submesh_off = N_submesh if submesh_off_diag == True else None
+    V_main = smart_potential_matrix(V, kx_flat, ky_flat, N_submesh, submesh_radius)
 
-    if N_submesh==None or k_diff_norm > threshold:
-        Potential_value = V.call(k_diff_norm)
-    else:
-        # THIS BLOCK WILL RUN ONLY IF "k_diff_norm" IS EQUAL OR SMALLER
-        # THAN A LIMIT, DENOTED HERE BY "threshold":
-        w_array = np.linspace(-dk/2, dk/2, N_submesh)
-        Potential_value = 0
-        number_of_sing_points = 0
-        for wx in w_array:
-            for wy in w_array:
-                w_vec = np.array([wx, wy])
-                q_vec = k_vec_diff + w_vec
-                q = np.linalg.norm(q_vec)
-                if q == 0: number_of_sing_points += 1; continue; # skip singularities
-                Potential_value += V.call(q)
-        # if number_of_sing_points != 0 :
-            # print("\t\t\tFor k-k' = ", k_vec_diff ," the number of singular points was ", number_of_sing_points)
-        Potential_value = Potential_value/(N_submesh**2 - number_of_sing_points)
-    return Potential_value
+    # DIAGONAL VALUE: EQUAL FOR EVERY POINT (WHEN USING SUBMESH)
+    if N_submesh != None:
+        # print("\t\tCalculating the potential around zero...")
+        k_0 = np.array([0,0])
+        V_0 = potential_average(V, k_0, N_submesh, submesh_radius)
+        np.fill_diagonal(V_main, V_0) # PUT ALL TOGETHER
+
+    return V_main
 
 @njit
 def smart_potential_matrix(V, kx_flat, ky_flat, N_submesh, submesh_radius):
@@ -282,30 +258,40 @@ def smart_potential_matrix(V, kx_flat, ky_flat, N_submesh, submesh_radius):
     # plt.imshow(M_complete)
     return M_complete
 
-
-def potential_matrix(V, kx_matrix, ky_matrix, N_submesh, submesh_radius=0):
+@njit
+def potential_average(V, k_vec_diff, N_submesh, submesh_radius):
     """
-    This function generates a square matrix that contains the values of
-    the potential for each pair of vectors k & k'.
-
-    Dimensions = Nk x Nk
-    where Nk = (Nk_x * Nk_y)
+    As we've been using a square lattice, we can use
+    * w_x_array == w_y_array -> w_array
+    * with limits:  -dw/2, +dw/2
+    * where: dw = sqrt(dk2)
     """
-    kx_flat = kx_matrix.flatten()
-    ky_flat = ky_matrix.flatten()
+    k_diff_norm = np.sqrt(k_vec_diff[0]**2 + k_vec_diff[1]**2)
+    dk = np.sqrt(V.dk2)
+    threshold = submesh_radius * dk
 
-    # OUT OF DIAGONAL: SMART SCHEME
-    # N_submesh_off = N_submesh if submesh_off_diag == True else None
-    V_main = smart_potential_matrix(V, kx_flat, ky_flat, N_submesh, submesh_radius)
+    # print('threshold: ', threshold)
+    # print('k_diff: ', k_diff_norm)
 
-    # DIAGONAL VALUE: EQUAL FOR EVERY POINT (WHEN USING SUBMESH)
-    if N_submesh != None:
-        # print("\t\tCalculating the potential around zero...")
-        k_0 = np.array([0,0])
-        V_0 = potential_average(V, k_0, N_submesh, submesh_radius)
-        np.fill_diagonal(V_main, V_0) # PUT ALL TOGETHER
-
-    return V_main
+    if N_submesh==None or k_diff_norm > threshold:
+        Potential_value = V.call(k_diff_norm)
+    else:
+        # THIS BLOCK WILL RUN ONLY IF "k_diff_norm" IS EQUAL OR SMALLER
+        # THAN A LIMIT, DENOTED HERE BY "threshold":
+        w_array = np.linspace(-dk/2, dk/2, N_submesh)
+        Potential_value = 0
+        number_of_sing_points = 0
+        for wx in w_array:
+            for wy in w_array:
+                w_vec = np.array([wx, wy])
+                q_vec = k_vec_diff + w_vec
+                q = np.linalg.norm(q_vec)
+                if q == 0: number_of_sing_points += 1; continue; # skip singularities
+                Potential_value += V.call(q)
+        # if number_of_sing_points != 0 :
+            # print("\t\t\tFor k-k' = ", k_vec_diff ," the number of singular points was ", number_of_sing_points)
+        Potential_value = Potential_value/(N_submesh**2 - number_of_sing_points)
+    return Potential_value
 
 # ============================================================================= #
 ##                              BSE - Exchange term:
@@ -351,12 +337,6 @@ def X_k1k2(k1_ind, k2_ind, Vectors, Values, r_0, d, Ham):
     """
     # TODO: DOC STRING
     """
-    # To know how many conduction and valence bands we have
-    # I SUPPOSE IT WILL BE FIXED OVER THE WHOLE RECIPROCAL SPACE
-
-    # cond_vs, vale_vs = split_values(Values[0,0,:])
-    # cond_n = len(cond_vs)
-    # vale_n = len(vale_vs)
     cond_n, vale_n = Ham.condBands, Ham.valeBands
     X_k1_k2 = 1j * np.zeros((cond_n*vale_n)**2)
     nkx, nky, nstates = Values.shape # nkx -> kx-points; nky -> ky -> points; nstates -> # of eigenvalues
@@ -369,14 +349,9 @@ def X_k1k2(k1_ind, k2_ind, Vectors, Values, r_0, d, Ham):
     # On the other hand, the largest valence band is the closest of the gap
     # among valence bands.
 
-    # cond_inds = list(range(cond_n))                 # [ 0, 1, ... ,  cond_n-1] # OLD VERSION
-    # vale_inds = list(range(-1,-1*(vale_n+1),-1))    # [-1,-2, ... , -vale_n]   # OLD VERSION
-
     cond_inds = list(range(-1,-1*(cond_n+1),-1))    # [ 0, 1, ... ,  cond_n-1] # NEW VERSION
     vale_inds = list(range(vale_n))                 # [-1,-2, ... , -vale_n]   # NEW VERSION
-    # if k1_ind==0 and k2_ind==0:
-    #     print('cond_inds = ', cond_inds)
-    #     print('vale_inds = ', vale_inds)
+
     #===================================================================#
     #                       main loop of this function:                 #
     #===================================================================#
@@ -393,7 +368,7 @@ def X_k1k2(k1_ind, k2_ind, Vectors, Values, r_0, d, Ham):
 
     # ================================================================= #
     epsilon_m = 2 * r_0/d
-    int_laplacian_V = - 1e6/(EPSILON_0 * epsilon_m)
+    int_laplacian_V = - 1e6/(const.EPSILON_0 * epsilon_m)
 
     return int_laplacian_V * X_k1_k2.reshape(cond_n*vale_n, cond_n*vale_n)
 
@@ -420,70 +395,8 @@ def X_k1k2_cv(k1_ind, k2_ind, c1_ind, c2_ind, v1_ind, v2_ind, Ham, Vectors_flatt
     #
     vA = 1/np.sqrt(2) * (1/E_cv) * np.array([Ax,Ay])
     vB = 1/np.sqrt(2) * (1/E_vc_p) * np.array([Bx,By])
-    # c_Pi_v   = (1/E_cv) * fancy_inner_product(c1_k1.conj(), fancy_matrix_product(Pi_matrix, v1_k1))
-    # vp_Pi_cp = (1/E_vc_p) * fancy_inner_product(v2_k2.conj(), fancy_matrix_product(Pi_matrix, c2_k2))
     return vA.dot(vB)
 
-# @njit
-# def fancy_inner_product(v1, v2):
-#     ncolumns, versor_dim = v2.shape
-#
-#     columns = range(ncolumns)
-#     result = 1j * np.zeros((1, versor_dim))
-#
-#     for m in columns:
-#         result += v1[m] * v2[m]
-#
-#     return result[0]
-#
-# @njit
-# def fancy_matrix_product(M, v):
-#     """
-#     This function takes two arrays as input and return a special
-#     matrix produt:
-#         - one of the arrays (1D or 2D) has vectors (2D or 3D) as entries
-#         - while the other iput has to be a 1D array with numbers as entries
-#
-#         DOESN'T MATTER THE ORDER OF THE INPUTS PROVIDED ONE
-#         OF THEM IS 1D-ARRAY WITH NUMERIC ENTRIES WHILE THE
-#         OTHER IS A MATRIX OR A VECTOR OF VECTORS.
-#
-#
-#     ---------------------------------------------------------------------------
-#     When both arrays are 1 dimensional, we'll have a inner product, which will
-#     result in a vector with the same dimesion of the components of the input
-#     of bigger rank:
-#
-#     >> v1 = np.array([[1,0,0],[0,1,0]])
-#     >> v2 = np.array([1,2])
-#     >> fancy_product(v1,v2)
-#     array([1,2,0])
-#
-#     ---------------------------------------------------------------------------
-#     Now, if one of the arrays is a matrix, we'll have a matrix product, which
-#     will result in a vector with vectors as the components:
-#
-#     >> v1 = np.array([
-#     ...             [[1,0,0],[0,0,0],[0,0,0]],
-#     ...             [[0,0,0],[0,1,0],[0,0,0]],
-#     ...             [[0,0,0],[0,0,0],[0,0,1]]
-#     ...             ])
-#     >> v2 = np.array([1,2,3])
-#     >> fancy_product(v1,v2)
-#     array([[1,0,0],[0,2,0],[0,0,3]])
-#
-#     """
-#     nrows, ncolumns, versor_dim = M.shape
-#
-#     rows = range(nrows)
-#     columns = range(ncolumns)
-#     result = 1j * np.zeros((nrows, versor_dim))
-#
-#     for n in rows:
-#         for m in columns:
-#             result[n] += M[n,m] * v[m]
-#
-#     return result
 
 # ============================================================================= #
 ##              Visualization:
@@ -497,7 +410,6 @@ def plot_wave_function(eigvecs_holder, state_preview):
     plt.show()
 
 
-@st_time
 def main():
     # ========================================================================= #
     ##              Outuput options:
@@ -546,8 +458,8 @@ def main():
     if alpha_choice == 1:
         alphac, alphav = 1/mc, 1/mv
     elif alpha_choice == 2:
-        alphac = 1/mc + 1/hbar2_over2m * (gamma**2/Egap)
-        alphav = 1/mv - 1/hbar2_over2m * (gamma**2/Egap)
+        alphac = 1/mc + 1/const.hbar2_over2m * (gamma**2/Egap)
+        alphav = 1/mv - 1/const.hbar2_over2m * (gamma**2/Egap)
     else:
         alphac, alphav = 0, 0
 
@@ -571,12 +483,6 @@ def main():
         else:
             print(sys.argv[0],': invalid option', option)
             sys.exit(1)
-
-    if Egap == 0:
-        # When we don't have a gap it possible to have an error
-        # due to the current strategy using "split_values" function,
-        # this artificial gap prevent this problem.
-        Egap = 1e-5
 
     #==================#
     # HAMILTONIAN PARAMS
@@ -651,10 +557,9 @@ def main():
     # ========================================================================= #
     ##                                  main_loop
     # ========================================================================= #
-    @st_time
     def build_bse_matrix(ind_L, ind_Nk):
         # First we have to define the grid:
-        Kx, Ky, dk2 = wannier.define_grid_k(L_values[ind_L], n_points[ind_Nk])
+        Kx, Ky, dk2 = define_grid_k(L_values[ind_L], n_points[ind_Nk])
 
         # Then, we need the eigenvalues and eigenvectors of our model for eack k-point
         # Values3D, Vectors4D = values_and_vectors(hamiltonian2x2, Kx, Ky, **hamiltonian_params)
@@ -679,7 +584,6 @@ def main():
 
         return W_diag + W_non_diag + X_term
 
-    @st_time
     def diagonalize_bse(BSE_MATRIX):
         print("\tDiagonalizing the BSE matrix...")
         return LA.eigh(BSE_MATRIX)
