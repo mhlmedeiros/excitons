@@ -3,7 +3,7 @@ import numpy as np
 import numpy.linalg as LA
 import itertools as it
 import physical_constants as const
-import wannier_coulomb_numba as wannier
+import bethe_salpeter_equation as bse
 import hamiltonians as ham
 import treat_files as files
 
@@ -187,7 +187,7 @@ def main():
     # =============================== #
     ##    DEFINE THE K-SPACE GRID:
     # =============================== #
-    Kx, Ky, dk2 = wannier.define_grid_k(Lk, Nk)
+    Kx, Ky, dk2 = bse.define_grid_k(Lk, Nk)
     grid = (Kx, Ky, dk2)
 
     # =============================== #
