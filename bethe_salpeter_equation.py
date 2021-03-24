@@ -270,7 +270,7 @@ def potential_average(V, k_vec_diff, N_submesh, submesh_radius):
     # print('threshold: ', threshold)
     # print('k_diff: ', k_diff_norm)
 
-    if N_submesh==None or k_diff_norm > threshold:
+    if N_submesh==None or k_diff_norm >= threshold:
         Potential_value = V.call(k_diff_norm)
     else:
         # THIS BLOCK WILL RUN ONLY IF "k_diff_norm" IS EQUAL OR SMALLER
