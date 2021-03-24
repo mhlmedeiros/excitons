@@ -1,13 +1,12 @@
 #!/home/marcos/anaconda3/envs/numba/bin/python
 
+import sys
 import numpy as np
 import scipy.linalg as LA
 import scipy.sparse.linalg as LAS
 import hamiltonians as ham
-import wannier_coulomb_numba as wannier
 import treat_files as files
 import bethe_salpeter_equation as bse
-import os, sys, subprocess, shutil, glob
 
 
 
@@ -114,7 +113,7 @@ def main():
     # =============================== #
     ##    DEFINE THE K-SPACE GRID:
     # =============================== #
-    Kx, Ky, dk2 = wannier.define_grid_k(L_k, n_mesh)
+    Kx, Ky, dk2 = bse.define_grid_k(L_k, n_mesh)
     grid = (Kx, Ky, dk2)
 
     # =============================== #
