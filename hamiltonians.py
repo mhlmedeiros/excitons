@@ -391,6 +391,8 @@ fields3Bands = [
     ('P10', float32),
     ('P20', float32),
     ('P21', float32),
+    ('P20_sign', int32),
+    ('P21_sign', int32),
     ('condBands', int32),
     ('valeBands', int32),
 ]
@@ -399,7 +401,7 @@ fields3Bands = [
 class H3x3:
     """
     """
-    def __init__(self, E0, E1, E2, m0, m1, m2, P10, P20, P21):
+    def __init__(self, E0, E1, E2, m0, m1, m2, P10, P20, P21, P20_sign, P21_sign):
         # PARAMS OF THE HAMILTONIAN
         self.E0 = E0
         self.E1 = E1
@@ -410,21 +412,28 @@ class H3x3:
         self.P10 = P10
         self.P20 = P20
         self.P21 = P21
+        self.P20_sign = P20_sign  # {+1,-1}
+        self.P21_sign = P21_sign  # {+1,-1}
         self.Egap = min((E1-E0), (E2-E0))
         ## META DATA OF THE HAMILTONIAN:
         self.condBands = 2
         self.valeBands = 1
 
     def Pi(self):
-        P10, P20 = self.P10, self.P20
-        Pix = (1.+0j) * np.array([
-        [   0,   0, P20],
-        [   0,   0, P10],
+        P10 = self.P10
+
+        P20 = self.P20_sign * self.P20
+        P21 = self.P21_sign * self.P21
+
+        Pix = (1.+ 0j) * np.array([
+        [   0, P21, P20],
+        [ P21,   0, P10],
         [ P20, P10,   0]])
+
         Piy = 1j * np.array([
-        [   0,   0,-P20],
-        [   0,   0,+P10],
-        [+P20,-P10,   0]])
+        [   0, P21, P20],
+        [-P21,   0, P10],
+        [-P20,-P10,   0]])
         return Pix, Piy
 
     def H_0(self):
@@ -435,19 +444,10 @@ class H3x3:
         [0, 0, E0]])
         return H0
 
-    def H_cc(self):
-        P21 = self.P21
-        Hcc = np.array([
-        [  0, P21, 0],
-        [P21,   0, 0],
-        [  0,   0, 0*P21]]) # it makes no sense but without this it doesn't work
-        return Hcc
-
     def H_k1(self, kx, ky):
-        kplus = (kx + 1j*ky)
         Pix, Piy = self.Pi()
         Hcc = self.H_cc()
-        return kx*Pix + ky*Piy + kplus*Hcc
+        return kx*Pix + ky*Piy
 
     def H_k2(self, kx, ky):
         k2  = kx**2 + ky**2
