@@ -424,9 +424,15 @@ class H3x3:
     def Pi(self):
         P10 = self.P10
 
-        P20 = self.P20_sign * self.P20
-        P21 = self.P21_sign * self.P21
+        P20 = self.P20
+        P21 = self.P21
 
+        s20 = self.P20_sign 
+        s21 = self.P21_sign
+
+        ## ALL POSITIVE, k_x COEFICIENTS 
+        ## DO NOT DEPEND ON 'CHIRALITY' 
+        ## PARAMETERS.  
         # Pix = (1.+ 0j) * np.array([
         # [   0, P21, P20],
         # [ P21,   0, P10],
@@ -437,14 +443,17 @@ class H3x3:
         [   0,   0, P10],
         [ P20, P10,   0]])
 
+        ## HERE THE SIGN WILL DEPEND ON 
+        ## SIGNS ATTRIBUTES THAT CHANGE
+        ## 'CHIRALITY'.
         # Piy = 1j * np.array([
-        # [   0, P21, P20],
-        # [-P21,   0, P10],
-        # [-P20,-P10,   0]])
+        # [       0, s21*P21, s20*P20],
+        # [-s21*P21,       0,     P10],
+        # [-s20*P20,    -P10,       0]])
         Piy = 1j * np.array([
-        [   0,   0, P20],
-        [   0,   0, P10],
-        [-P20,-P10,   0]])
+        [       0,    0, s20*P20],
+        [       0,    0,     P10],
+        [-s20*P20, -P10,       0]])
         return Pix, Piy
 
     def H_0(self):
