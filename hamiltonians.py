@@ -416,15 +416,15 @@ class H3x3:
         self.valeBands = 1
 
     def Pi(self):
-        P10, P20 = self.P10, self.P20
+        P10, P20, P21 = self.P10, self.P20, self.P21
         Pix = (1.+0j) * np.array([
-        [   0,   0, P20],
-        [   0,   0, P10],
+        [   0, P21, P20],
+        [ P21,   0, P10],
         [ P20, P10,   0]])
         Piy = 1j * np.array([
-        [   0,   0,-P20],
-        [   0,   0,+P10],
-        [+P20,-P10,   0]])
+        [   0, -P21, -P20],
+        [+P21,    0,  +P10],
+        [+P20, -P10,    0]])
         return Pix, Piy
 
     def H_0(self):
@@ -444,10 +444,10 @@ class H3x3:
         return Hcc
 
     def H_k1(self, kx, ky):
-        kplus = (kx + 1j*ky)
+        # kplus = (kx + 1j*ky)
         Pix, Piy = self.Pi()
-        Hcc = self.H_cc()
-        return kx*Pix + ky*Piy + kplus*Hcc
+        # Hcc = self.H_cc()
+        return kx*Pix + ky*Piy #+ kplus*Hcc
 
     def H_k2(self, kx, ky):
         k2  = kx**2 + ky**2
