@@ -91,14 +91,14 @@ fieldsWannier=[
 
 class H_Wannier:
 
-    def __init__(self,m_1,m_2=None):
+    def __init__(self,m_1,m_2=None,Egap=0):
         """
         """
         if m_2 != None: self.m_eff = (m_1*m_2)/(m_1+m_2)
         else: self.m_eff = m_1
         self.condBands = 0
         self.valeBands = 0
-        self.Egap      = 0
+        self.Egap      = Egap
 
     def call(self,kx,ky):
         m_eff = self.m_eff
@@ -108,18 +108,18 @@ class H_Wannier:
 fields2x2 = [
     ('alphac', float32),
     ('alphav', float32),
-    ('gap', float32),
+    ('Egap', float32),
     ('gamma', float32),
-    ('condBands', int32),
     ('valeBands', int32),
+    ('condBands', int32),
 ]
 
 @jitclass(fields2x2)
 class H2x2:
-    def __init__(self, alphac, alphav, gap, gamma):
+    def __init__(self, alphac, alphav, Egap, gamma):
         self.alphac = alphac
         self.alphav = alphav
-        self.gap = gap
+        self.Egap = Egap
         self.gamma = gamma
         self.valeBands = 1
         self.condBands = 1
@@ -134,11 +134,11 @@ class H2x2:
             [-1j,  0]])
         return Pix, Piy
 
-    def H_0():
-        E_gap   = self.gap
+    def H_0(self):
+        E_gap   = self.Egap
         H = np.array([
             [E_gap, 0],
-            [    0, 0]])
+            [    0, 0*E_gap]])
         return H
 
     def H_kp1(self, kx, ky):
@@ -156,7 +156,7 @@ class H2x2:
         return H
 
     def call(self, kx, ky):
-        return self.H_0() + self.H_kp1(kx,ky) + self.H_k2(kx,ky)
+        return self.H_kp1(kx,ky) + self.H_k2(kx,ky) + self.H_0()
 
 #===============================================================================
 
@@ -421,39 +421,56 @@ class H3x3:
         self.condBands = 2
         self.valeBands = 1
 
-    def Pi(self):
-        P10 = self.P10
+    def basis(self):
+        """
+        This method is only used in the wavefunction analysis. The cluster
+        version of the code doesn't need to have this method.
+        It returns two lists:
+            * the first list contains the conduction basis vectors
+            * the second list has the valence basis vectors
+        """
+        cond_0 = np.array([1,0,0])
+        cond_1 = np.array([0,1,0])
+        vale   = np.array([0,0,1])
+        return [cond_0, cond_1], [vale]
 
+    def Pi(self):
+        """
+        Notice that this is the important Pi-operator with which
+        one can calculate the absorption. This method is also adopted
+        inside this class by being called by self.H_k1(), which by its
+        turn is called by self.call().
+
+        The operators Pix and Piy have to be Hemitian, and
+        Pix * k_x + Piy * k_y = [[           0, P21*k_(+/-), P20*k_(+/-)],
+                                 [ P21*k_(-/+),           0,   P10*k_(+)],
+                                 [ P20*k_(-/+),   P10*k_(-),           0]]
+        """
+        P10 = self.P10
         P20 = self.P20
         P21 = self.P21
 
-        s20 = self.P20_sign 
-        s21 = self.P21_sign
+        s0 = self.P20_sign
+        s1 = self.P21_sign
 
-        ## ALL POSITIVE, k_x COEFICIENTS 
-        ## DO NOT DEPEND ON 'CHIRALITY' 
-        ## PARAMETERS.  
-        # Pix = (1.+ 0j) * np.array([
-        # [   0, P21, P20],
-        # [ P21,   0, P10],
-        # [ P20, P10,   0]])
-
+        ## k_x COEFICIENTS:
+        ## ALL POSITIVE, AND REAL
+        ## DO NOT DEPEND ON 'CHIRALITY'
+        ## PARAMETERS.
         Pix = (1.+ 0j) * np.array([
-        [   0,   0, P20],
-        [   0,   0, P10],
+        [   0, P21, P20],
+        [ P21,   0, P10],
         [ P20, P10,   0]])
 
-        ## HERE THE SIGN WILL DEPEND ON 
-        ## SIGNS ATTRIBUTES THAT CHANGE
-        ## 'CHIRALITY'.
-        # Piy = 1j * np.array([
-        # [       0, s21*P21, s20*P20],
-        # [-s21*P21,       0,     P10],
-        # [-s20*P20,    -P10,       0]])
+        ## k_y COEFICIENTS: ALL IMAGINARY
+        ## HERE THE SIGN WILL DEPEND ON
+        ## ATTRIBUTES THAT CHANGE 'CHIRALITY':
+        ## 'self.P20_sign', and 'self.P21_sign'.
         Piy = 1j * np.array([
-        [       0,    0, s20*P20],
-        [       0,    0,     P10],
-        [-s20*P20, -P10,       0]])
+        [      0, s1*P21,  s0*P20],
+        [-s1*P21,      0,     P10],
+        [-s0*P20,   -P10,       0]])
+
         return Pix, Piy
 
     def H_0(self):
@@ -603,9 +620,13 @@ def main():
         P10 = 2.0,
         P20 = 0.5,
         P21 = 0.5,
+        P20_sign = +1,
+        P21_sign = +1,
     )
     H = H3x3(**params_test)
     print(H.call(0,0))
+
+    print(H.basis())
 
 
 if __name__=='__main__':
