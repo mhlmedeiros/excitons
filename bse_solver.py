@@ -8,8 +8,6 @@ import hamiltonians as ham
 import treat_files as files
 import bethe_salpeter_equation as bse
 
-
-
 # ========================================================================= #
 ##                   BUILDING FUNCTION & SOLVING FUNCTION
 # ========================================================================= #
