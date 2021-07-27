@@ -163,8 +163,8 @@ class H2x2:
 class H4x4_general:
     """
     The instances of this class cannot be passed to numba-compiled functions.
-    But, since it is a Python class it can be parent of other classes, it
-    includes 'jitclasses'.
+    But, as a Python class it can be parent of other classes, which includes
+    'jitclasses'.
     """
     def __init__(self, alphac_up, alphav_up, gap_up, gamma_up, alphac_down, alphav_down, gap_down, gamma_down):
         ## SPIN-UP:
@@ -377,6 +377,155 @@ class H4x4_Kormanyos_Fabian:
 
     def call(self, kx,ky):
         return self.H_0() + self.H_SO() + self.H_kp1(kx, ky) + self.H_kp2(kx, ky)
+
+fieldsKormanyosFabianRashba = [
+    ('Egap', float32),
+    ('E_c', float32),
+    ('E_v', float32),
+    ('alpha_up', float32),
+    ('alpha_dn', float32),
+    ('beta_up', float32),
+    ('beta_dn', float32),
+    ('gamma', float32),
+    ('gamma_z', float32),
+    ('delta_c', float32),
+    ('delta_v', float32),
+    ('kappa_up', float32),
+    ('kappa_dn', float32),
+    ('alpha_Rashba_c', float32),
+    ('alpha_Rashba_v', float32),
+    ('valey', int32),
+    ('condBands', int32),
+    ('valeBands', int32),
+]
+
+@jitclass(fieldsKormanyosFabianRashba)
+class H4x4_Kormanyos_Fabian_Rashba:
+    """
+    Version of the Kormanyos Hamiltonian including the Rashba SOC:
+    """
+    def __init__(self, E_c, E_v, alpha_up, alpha_dn, beta_up, beta_dn, gamma, gamma_z, delta_c, delta_v, kappa_up, kappa_dn, alpha_Rashba_c, alpha_Rashba_v, valey):
+        # PARAMS OF THE HAMILTONIAN
+        self.Egap= E_c
+        self.E_c = E_c + np.abs(delta_c)
+        self.E_v = E_v - np.abs(delta_v)
+        self.alpha_up = alpha_up
+        self.alpha_dn = alpha_dn
+        self.beta_up = beta_up
+        self.beta_dn = beta_dn
+        self.gamma = gamma
+        self.gamma_z = gamma_z
+        self.delta_c = delta_c
+        self.delta_v = delta_v
+        self.kappa_up = kappa_up
+        self.kappa_dn = kappa_dn
+        self.alpha_Rashba_c = alpha_Rashba_c
+        self.alpha_Rashba_v = alpha_Rashba_v
+        ## META DATA OF THE HAMILTONIAN:
+        self.valey = valey        # K == 1, K' == -1
+        self.condBands = 2
+        self.valeBands = 2
+
+    def basis(self):
+        """
+        This method is only used in the wavefunction analysis. The cluster
+        version of the code doesn't need to have this method.
+        It returns two lists:
+            * the first list contains the conduction basis vectors
+            * the second list has the valence basis vectors
+        """
+        cond_up = np.array([0,0,1,0])
+        cond_dn = np.array([0,0,0,1])
+        vale_up = np.array([1,0,0,0])
+        vale_dn = np.array([0,1,0,0])
+        return [cond_up, cond_dn], [vale_up, vale_dn]
+
+    def Pi(self):
+        """
+        Differently from the majority of the models implemented here,
+        for this particular case we have implemented the matrix 'Piz'.
+        However, this matrix is NOT supposed to be used in the Hamiltonian
+        definition, instead it is only used to calculate the absorption spectra
+        when the polarization z is required.
+        """
+        gamma = self.gamma
+        gamma_z = self.gamma_z
+        valey = self.valey
+        Pix = (1.+0j) * valey * gamma * np.array([
+        [ 0, 0, 1, 0],
+        [ 0, 0, 0, 1],
+        [ 1, 0, 0, 0],
+        [ 0, 1, 0, 0]])
+        Piy = gamma * np.array([
+        [  0,  0,-1j,  0],
+        [  0,  0,  0,-1j],
+        [+1j,  0,  0,  0],
+        [  0,+1j,  0,  0]])
+        Piz = (1.+0j) * gamma_z * np.array([
+        [ 0, 0, 1, 0],
+        [ 0, 0, 0, 1],
+        [ 1, 0, 0, 0],
+        [ 0, 1, 0, 0]])
+        return Pix, Piy, Piz
+
+    def H_0(self):
+        E_v, E_c = self.E_v, self.E_c
+        H0 = np.array([
+        [E_v, 0, 0, 0],
+        [0, E_v, 0, 0],
+        [0, 0, E_c, 0],
+        [0, 0, 0, E_c]])
+        return H0
+
+    def H_SO(self):
+        d_v, d_c = self.delta_v, self.delta_c
+        HSO = np.array([
+        [d_v, 0, 0, 0],
+        [0,-d_v, 0, 0],
+        [0, 0, d_c, 0],
+        [0, 0, 0,-d_c]])
+        return self.valey * HSO
+
+    def H_kp1(self, kx, ky):
+        Pix, Piy,_ = self.Pi()
+        return kx*Pix + ky*Piy
+
+    def H_kp2(self, kx, ky):
+        k2  = kx**2 + ky**2
+        k_p = kx + self.valey * 1j * ky
+        k_m = kx - self.valey * 1j * ky
+        if self.valey == 1:
+            a1, a2 = self.alpha_up, self.alpha_dn
+            b1, b2 = self.beta_up, self.beta_dn
+            kau, kad = self.kappa_up, self.kappa_dn
+        else:
+            a1, a2 = self.alpha_dn, self.alpha_up
+            b1, b2 = self.beta_dn, self.beta_up
+            kau, kad = self.kappa_dn, self.kappa_up
+        Hkp2 = np.array([
+            [a1*k2     ,         0,kau*k_p**2,         0],
+            [         0,     a2*k2,         0,kad*k_p**2],
+            [kau*k_m**2,         0,     b1*k2,         0],
+            [         0,kad*k_m**2,         0,     b2*k2]
+        ])
+        return Hkp2
+
+    def H_Rashba(self, kx, ky):
+        a_C = self.alpha_Rashba_c
+        a_V = self.alpha_Rashba_v
+        k_p = kx + 1j * ky
+        k_m = kx - 1j * ky
+        H_R = 1j * np.array([
+            [       0,-a_V*k_m,       0,       0],
+            [ a_V*k_p,       0,       0,       0],
+            [       0,       0,       0,-a_C*k_m],
+            [       0,       0, a_C*k_p,       0]
+        ])
+        return H_R
+
+    def call(self, kx,ky):
+        return self.H_0() + self.H_SO() + self.H_kp1(kx, ky) + self.H_kp2(kx, ky) + self.H_Rashba(kx, ky)
+
 
 
 #===============================================================================
