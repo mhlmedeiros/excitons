@@ -34,7 +34,7 @@ def analyse_all_bse_states(A_Ns, Vectors, cond_n, vale_n, cond_vects, vale_vects
 
 def map_wavefunction_over_all_pairs(A_bse, Vectors, cond_n, vale_n, states_c, states_v):
     # A_list = []
-    Ncomp = cond_n * vale_n
+    Ncomp = cond_n * vale_n ## NUMBER OF COMBINATIONS conduction-valence bands
     nkx, nky,_,_ = Vectors.shape
     Nsites = nkx * nky
     A_list = np.empty((Ncomp, Nsites), dtype=complex)
@@ -114,7 +114,7 @@ def main():
     # =============================== #
     hamiltonian = Ham(**params)
     cond_n, vale_n = hamiltonian.condBands, hamiltonian.valeBands
-    cond_vects, vale_vects = hamiltonian.basis()
+    cond_vects, vale_vects = hamiltonian.basis() ### THE HAMILTONIAN CLASS MAY NOT HAVE THIS METHOD DEFINED
     Values, Vectors = ham.values_and_vectors(hamiltonian, Kx, Ky) # Calculate the eigenvectors of H
 
     # =============================== #
