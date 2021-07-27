@@ -584,10 +584,6 @@ class H3x3:
         return [cond_0, cond_1], [vale]
 
     def Pi(self):
-<<<<<<< HEAD
-        P10, P20, P21 = self.P10, self.P20, self.P21
-        Pix = (1.+0j) * np.array([
-=======
         """
         Notice that this is the important Pi-operator with which
         one can calculate the absorption. This method is also adopted
@@ -611,7 +607,6 @@ class H3x3:
         ## DO NOT DEPEND ON 'CHIRALITY'
         ## PARAMETERS.
         Pix = (1.+ 0j) * np.array([
->>>>>>> feature-cluster-bse
         [   0, P21, P20],
         [ P21,   0, P10],
         [ P20, P10,   0]])
@@ -621,16 +616,10 @@ class H3x3:
         ## ATTRIBUTES THAT CHANGE 'CHIRALITY':
         ## 'self.P20_sign', and 'self.P21_sign'.
         Piy = 1j * np.array([
-<<<<<<< HEAD
-        [   0, -P21, -P20],
-        [+P21,    0,  +P10],
-        [+P20, -P10,    0]])
-=======
         [      0, s1*P21,  s0*P20],
         [-s1*P21,      0,     P10],
         [-s0*P20,   -P10,       0]])
 
->>>>>>> feature-cluster-bse
         return Pix, Piy
 
     def H_0(self):
@@ -642,15 +631,8 @@ class H3x3:
         return H0
 
     def H_k1(self, kx, ky):
-<<<<<<< HEAD
-        # kplus = (kx + 1j*ky)
-        Pix, Piy = self.Pi()
-        # Hcc = self.H_cc()
-        return kx*Pix + ky*Piy #+ kplus*Hcc
-=======
         Pix, Piy = self.Pi()
         return kx*Pix + ky*Piy
->>>>>>> feature-cluster-bse
 
     def H_k2(self, kx, ky):
         k2  = kx**2 + ky**2
