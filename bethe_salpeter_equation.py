@@ -15,7 +15,7 @@ def define_grid_k(size_pos, n_points):
     """
     "whole interval" = [-size_pos, +size_pos]
 
-    sizes_positive: final of the interval of wave number; unit = nm^{-1}
+    sizes_pos: final of the interval of wave number; unit = nm^{-1}
 
     Nk: number of discrete points in the whole interval.
     """
@@ -31,7 +31,7 @@ def define_grid_k(size_pos, n_points):
 
 def diagonal_elements(Values, Ham):
     """
-    Function tha returns a diagonal matrix which has the elements defined as
+    Function that returns a diagonal matrix which has the elements defined as
 
         W_diag_matrix[n,n] = E_c(k) - E_v(k)
 
@@ -43,7 +43,7 @@ def diagonal_elements(Values, Ham):
     Of course the value given above isn't the only contribution to the diagonal
     elements of BSE-matrix. The following contribution also has diagonal contribution:
 
-        * Exchange term: X (NOT IMPLEMENTED YET)
+        * Exchange term: X
         * Potential term: when average around the |k-k'|=0 is considered.
     """
     # First we get some information about the shape of "Values"
@@ -156,7 +156,7 @@ def delta_k1k2(k1_ind, k2_ind, Vectors, Values, Ham):
     #===================================================================#
     #                       main loop of this function:                 #
     #===================================================================#
-    ## TO USE 'NUMBA COMPILATION IN THIS FUNCTION WE CAN'T USE 'itertools'
+    ## TO USE 'NUMBA COMPILATION' IN THIS FUNCTION WE CAN'T USE 'itertools'
     n = 0
     for v in vale_inds:
         for c in cond_inds:

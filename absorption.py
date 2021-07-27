@@ -30,8 +30,8 @@ def results_arrays(data_path):
 #==============================================================================#
 def pol_options(option):
     if      option == 'y'       : e_x, e_y = 0, 1;
-    elif    option == 'c_plus'  : e_x, e_y = 1, 1;
-    elif    option == 'c_minus' : e_x, e_y = 1,-1;
+    elif    option == 'c_plus'  : e_x, e_y = 1, 1j;
+    elif    option == 'c_minus' : e_x, e_y = 1,-1j;
     else                        : e_x, e_y = 1, 0; # (x) default
     e_a = np.array([e_x, e_y])
     return 1/LA.norm(e_a) * e_a
@@ -75,7 +75,7 @@ def dipole_vector(pol_versor, eigenvalues, eigenvectors, P_matrix, Hamiltonian):
     count = 0
     for (i,j,v,c) in it.product(range(N_y), range(N_x), vale_inds, cond_inds):
         # THE ORDER OF THE FOR-LOOPS IS IMPORTANT: KX MUST RUN FASTER THAN KY
-        # SINCE THAT IS THE ORDER EXPECTED FOR "A FLATTED" VERSION OF KX_MATRIX
+        # SINCE THAT IS THE ORDER EXPECTED FOR A "FLATTED" VERSION OF KX_MATRIX
         # AND KY_MATRIX:
         phi_valence = eigenvectors[i,j,:,v]
         phi_conduction = eigenvectors[i,j,:,c]
@@ -155,9 +155,12 @@ def main():
         # USED TO GENERATE THE DATA FOR THE 3-BANDS MODEL
         epsilon_sub         = float(sys.argv[1])
         params_master['epsilon']   = epsilon_sub
-        output_name = "results_absorption_3Bands_eps_{}".format(epsilon_sub)
+        results_file = "results_excitons_3Bands_eps_{}.npz".format(epsilon_sub)
+        output_name = "results_absorption_test_eps_{}".format(epsilon_sub)
+        print(results_file)
     else:
-        output_name = 'results_bse'
+        results_file = 'results_bse'
+        output_name = 'results_absorption.npz'
 
 
     # Ham, gamma, Egap, r_0, mc, mv, alpha_option, epsilon, exchange, d_chosen, L_k, n_mesh, n_sub, submesh_radius, n_rec_states = files.from_dic_to_var(**params_master)
@@ -209,7 +212,6 @@ def main():
     # =============================== #
     ##     LOAD THE BSE-EIGENSTUFF
     # =============================== #
-    results_file    = 'results_bse.npz'
     files.verify_essential_file(results_file)
     path = os.getcwd()
     data = path + '/' + results_file
