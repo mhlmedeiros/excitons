@@ -61,13 +61,16 @@ To use this script, one has to pass the 2 (two) mandatory arguments:
 
 In addition to that, there are some optional arguments as well:
 
-* `-e`, `--epsilon`
-* `-s`, `--save`
-* `-p`, `--preview`
+* `-e <value>`, `--epsilon <value>`:  dielectric constant value; default = `1.0`
+* `-ns`, `--not_save` : (flag-like) once used, the results will not be saved; .
+* `-p`, `--preview `: (flag-like) once used, the first energies (max of 15) will be printed in the terminal;
 
 #### `absorption_with_args.py`
 
-
+* `-i <path>`, `--input_file <path>`: indicate the path to the main input file; default = `infile.txt`
+* `-a <path>`, `--abs_file <path>`: indicate the path to the path for absorption input file; default = `absorption_infile.txt`  
+* `-b <path>`, `--bse_results <path>`: indicate the path to the bse results file; default = `results_bse.npz`
+* `ac <value>`, `--alphac <value>`: Rashba parameter for the conduction bands; default = `None` 
 
 
 
