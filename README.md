@@ -100,7 +100,7 @@ Then, for each point in the k-space we'll get 4 eigenstates for such a Hamiltoni
 
   * $E_{v1} < E_{v2} < E_{c2} < E_{c1}$
 
-Notice how the valence bands energies are called and compare with how the conduction band are named. Basically, we tag the valence bands in an ascending way in energy and in a descending way for conduction bands.
+Notice how the valence bands energies are called and compare with how the conduction bands are called. Basically, we tag the valence bands in an **ascending way** in energy and in a **descending way** for conduction bands.
 
 Now, recalling how the BSE-matrix are build using these states, one can better understand the final results recorded in `eigvals_holder` and `eigvecs_holder`. Looking at the function `diagonal_elements` located at the module `bethe_salpeter_equation.py` we see that the basis adopted for the BSE-matrix is given by
 
@@ -111,6 +111,7 @@ $$
 <p>
 <img src="./image_bse_basis_ordering.png" alt="Drawing" width=400/>
 </p>
+
 <!-- ![image](image_bse_basis_ordering.png) -->
 
 ## Organization of the code
