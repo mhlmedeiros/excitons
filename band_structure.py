@@ -1,4 +1,8 @@
+#!/home/marcos/anaconda3/envs/numba/bin/python
+
+import argparse
 import numpy as np
+import numpy.linalg as LA
 import matplotlib.pyplot as plt
 import treat_files as files
 
@@ -53,10 +57,33 @@ def plot_kormanyos_fabian_bands(kx, Values):
     plt.show()
     return 0
 
+def plot_simple_4_bands(kx, values):
+    fig, ax = plt.subplots(nrows = 2, figsize = (5,8))
+    ax[0].plot(kx, values[:,2])
+    ax[0].plot(kx, values[:,3])
+    ax[1].plot(kx, values[:,0])
+    ax[1].plot(kx, values[:,1])
+    # ax[0].set_xlim(-2,2)
+    # ax[1].set_xlim(-2,2)
+    # ax[0].set_ylim(-2,2)
+    # ax[1].set_ylim(-2,2)
+    plt.show()
+    return 0
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-m", "--main_file", default="infile.txt",
+                        type=str, help="path for the main input file")
+    args = parser.parse_args()
+    main_input_file = args.main_file
+    return main_input_file
+
 
 def main():
     # READ THE "infile.txt"
-    params = files.read_params("infile.txt")
+    main_file = parse_arguments()
+    params = files.read_params(main_file)
     Ham, r_0, epsilon, exchange, d_chosen, Lk, n_mesh, n_sub, submesh_radius, n_rec_states = files.pop_out_model(params)
     hamiltonian      = Ham(**params)
 
@@ -76,7 +103,9 @@ def main():
     Values, Vectors = split_states(Values, Vectors)
 
     # PLOT THE BANDS
-    plot_kormanyos_fabian_bands(kx, Values)
+    # plot_kormanyos_fabian_bands(kx, Values)
+    plot_simple(kx, Values)
+
 
 
 
