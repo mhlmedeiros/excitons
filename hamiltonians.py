@@ -319,6 +319,20 @@ class H4x4_Kormanyos_Fabian:
         self.condBands = 2
         self.valeBands = 2
 
+    def basis(self):
+        """
+        This method is only used in the wavefunction analysis. The cluster
+        version of the code doesn't need to have this method.
+        It returns two lists:
+            * the first list contains the conduction basis vectors
+            * the second list has the valence basis vectors
+        """
+        cond_up = np.array([0,0,1,0])
+        cond_dn = np.array([0,0,0,1])
+        vale_up = np.array([1,0,0,0])
+        vale_dn = np.array([0,1,0,0])
+        return [cond_up, cond_dn], [vale_up, vale_dn]
+
     def Pi(self):
         gamma = self.gamma
         valey = self.valey
@@ -462,11 +476,11 @@ class H4x4_Kormanyos_Fabian_Rashba:
         [+1j,  0,  0,  0],
         [  0,+1j,  0,  0]])
         Piz = (1.+0j) * gamma_z * np.array([
-        [ 0, 0, 1, 0],
         [ 0, 0, 0, 1],
-        [ 1, 0, 0, 0],
-        [ 0, 1, 0, 0]])
-        return Pix, Piy, Piz
+        [ 0, 0, 1, 0],
+        [ 0, 1, 0, 0],
+        [ 1, 0, 0, 0]])
+        return Pix, Piy #, Piz
 
     def H_0(self):
         E_v, E_c = self.E_v, self.E_c
@@ -487,7 +501,8 @@ class H4x4_Kormanyos_Fabian_Rashba:
         return self.valey * HSO
 
     def H_kp1(self, kx, ky):
-        Pix, Piy,_ = self.Pi()
+        # Pix, Piy,_ = self.Pi()
+        Pix, Piy = self.Pi()
         return kx*Pix + ky*Piy
 
     def H_kp2(self, kx, ky):
