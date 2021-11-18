@@ -1,4 +1,6 @@
-import os, sys
+#!/home/marcos/anaconda3/envs/numba/bin/python
+
+import argparse
 import numpy as np
 import numpy.linalg as LA
 import itertools as it
@@ -118,74 +120,44 @@ def broadening(Energies, Deltas, Gamma_Lorentz, padding, N_points_broadening):
 
 #==============================================================================#
 
-def main():
-    # print('\n******************************************************')
-    # print("                     ABSORPTION                   ")
-    # print('******************************************************\n')
+def parse_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i", "--input_file", default="infile.txt",
+                        type=str, help="path for the main input file")
+    parser.add_argument("-a", "--abs_file", default="absorption_infile.txt",
+                        type=str, help="path for the absorption settings file")
+    parser.add_argument("-b", "--bse_results", default="results_bse.npz",
+                        type=str, help="path for the bse results file")
+    parser.add_argument("-ac", "--alphac", default=None, type=float,
+                        help="Rashba parameter for the conduction bands")
+    args = parser.parse_args()
+    input_file = args.input_file
+    abs_file = args.abs_file
+    results_bse_file = args.bse_results
+    alphac = args.alphac
+    return input_file, abs_file, results_bse_file, alphac
 
+
+def main():
     # =============================== #
     ##     READING THE INPUT FILES:
     # =============================== #
-    #*********************************#
-    # output_name = 'results_absorption'
-    # if files.verify_output(output_name) == 'N': return 0
-    #*********************************#
-    # verify the existence of main input file: 'infile.txt'
-    main_input_file =  'infile.txt'
-    # files.verify_essential_file(main_input_file)
-
-    # verify the existence of the absorption input file: 'absorption_infile.txt'
-    absorption_input_file = 'absorption_infile.txt'
-    # files.verify_file_or_template(absorption_input_file)
-
-    # read both files
-    # params_master = files.read_file(main_input_file)
-    # params_abs    = files.read_file(absorption_input_file)
+    main_input_file, absorption_input_file, bse_results_file, alphac = parse_arguments()
     params_master = files.read_params(main_input_file)
     params_abs    = files.read_params(absorption_input_file)
-
-    # =============================== #
-    ##  TERMINAL OPTIONS (OVERRIDE):
-    # =============================== #
-    if len(sys.argv) == 4:
-        # USED TO GENERATE THE DATA BASIS USING WANNIER EQUATION
-        return 0 # THERE IS NO ABSORPTION FOR WANNIER EQUATION RESULTS
-    elif len(sys.argv) == 2:
-        # USED TO GENERATE THE DATA FOR THE 3-BANDS MODEL
-        # USED TO GENERATE THE DATA FOR THE 3-BANDS MODEL
-        epsilon_sub         = float(sys.argv[1])
-        params_master['epsilon']   = epsilon_sub
-        results_file = "results_excitons_3Bands_eps_{}.npz".format(epsilon_sub)
-        output_name = "results_absorption_test_eps_{}".format(epsilon_sub)
-        print(results_file)
-    else:
-        results_file = 'results_bse'
-        output_name = 'results_absorption.npz'
-
-
-    # Ham, gamma, Egap, r_0, mc, mv, alpha_option, epsilon, exchange, d_chosen, L_k, n_mesh, n_sub, submesh_radius, n_rec_states = files.from_dic_to_var(**params_master)
-    # pol_option, p_matrix, Gamma_option, Gamma1, Gamma2, Gamma3, padding, N_points_broad = files.from_dic_to_var_abs(**params_absortion)
-    #
-    # if alpha_option == 'masses':
-    #     alphac, alphav = 1/mc, 1/mv
-    # elif alpha_option == 'corrected':
-    #     alphac = 1/mc + 1/hbar2_over2m * (gamma**2/Egap)
-    #     alphav = 1/mv - 1/hbar2_over2m * (gamma**2/Egap)
-    # else:
-    #     alphac, alphav = 0, 0
 
     # =============================== #
     ##    POP OUT ALL INFORMATION:
     # =============================== #
     Ham, r_0, epsilon, exchange, d_value, Lk, Nk, Nsub, Rsub, Nsaved = files.pop_out_model(params_master)
     pol_option      = params_abs['pol_option']
-    # p_matrix        = eval('ham' + (params_abs['p_matrix']))
     Gamma_option    = params_abs['Gamma_option']
     Gamma1          = params_abs['Gamma1']
     Gamma2          = params_abs['Gamma2']
     Gamma3          = params_abs['Gamma3']
     padding         = params_abs['padding']
     N_points_broad  = params_abs['N_points_broad']
+
 
     # =============================== #
     ##    DEFINE THE K-SPACE GRID:
@@ -196,6 +168,7 @@ def main():
     # =============================== #
     ##    DEFINE THE HAMILTONIAN:
     # =============================== #
+    if alphac != None: params_master['alpha_Rashba_c'] = alphac
     hamiltonian      = Ham(**params_master)
     potential_obj    = ham.Rytova_Keldysh(dk2=dk2, r_0=r_0, epsilon=epsilon)
     VALORES, VETORES = ham.values_and_vectors(hamiltonian, Kx, Ky)
@@ -205,17 +178,14 @@ def main():
     # =============================== #
     ## DIPOLE MOMENTUM
     e_a = pol_options(pol_option)
-    # p_matrix = eval(p_matrix)
     P_matrix = p_matrix(hamiltonian, e_a)
     dipole_matrix = dipole_vector(e_a, VALORES, VETORES, P_matrix, hamiltonian)
 
     # =============================== #
     ##     LOAD THE BSE-EIGENSTUFF
     # =============================== #
-    files.verify_essential_file(results_file)
-    path = os.getcwd()
-    data = path + '/' + results_file
-    eigvals, eigvecs = results_arrays(data)
+    files.verify_essential_file(bse_results_file)
+    eigvals, eigvecs = results_arrays(bse_results_file)
 
 
     # =============================== #
@@ -234,6 +204,9 @@ def main():
     # =============================== #
     ##     SAVE THE RESULTS
     # =============================== #
+
+    output_name = 'absorption' + bse_results_file[16:-4] + '_pol_' + pol_option + '.npz'
+    print('Saving ', output_name)
     data_dic_to_save    = dict(E_raw=E_raw, Abs_raw=Abs_raw, E_broad=E_broad, Abs_broad=Abs_broad)
     files.output_file(output_name, data_dic_to_save)
 

@@ -1,12 +1,16 @@
+#!/home/marcos/anaconda3/envs/numba/bin/python
+
+import argparse
 import numpy as np
+import numpy.linalg as LA
 import matplotlib.pyplot as plt
 import treat_files as files
 
 def split_states(Values, Vectors):
     # NEW HOLDERS THAT WILL BE ORDERED
     if len(Values.shape) == 1:
-        Values  = Values.reshape((1,)+Values.shape)   # placeholder following the basis order
-        Vectors = Vectors.reshape((1,)+Vectors.shape) # placeholder following the basis order
+        Values  = Values.reshape((1,) + Values.shape)   # placeholder following the basis order
+        Vectors = Vectors.reshape((1,) + Vectors.shape) # placeholder following the basis order
     Values_New  = np.empty(Values.shape)  # placeholder following the basis order
     Vectors_New = np.empty(Vectors.shape,dtype=complex) # placeholder following the basis order
     print(Values.shape)
@@ -37,11 +41,11 @@ def plot_kormanyos_fabian_bands(kx, Values):
     ax[1,0].set_ylim([-750, 50])
     ax[1,0].legend(fontsize=22,loc=0)
     ax[1,0].grid()
-    ax[0,1].plot(kx, Values[:,-2], '-',linewidth=2, color='C2')
-    ax[0,1].plot(kx, Values[:,-1], '-',linewidth=2, color='C3')
+    ax[0,1].plot(kx, Values[:,-2], '.',linewidth=2, color='C2')
+    ax[0,1].plot(kx, Values[:,-1], '.',linewidth=2, color='C3')
     ax[0,1].hlines([2.8e3],xmin=-5, xmax=5, linestyle='--')
-    ax[0,1].set_xlim([-2.0,2.0])
-    ax[0,1].set_ylim([2750,3000])
+    ax[0,1].set_xlim([0.75,1.25])
+    ax[0,1].set_ylim([2830,2900])
     ax[0,1].grid()
     ax[1,1].plot(kx, Values[:,0], '-', linewidth=2, color='C2')
     ax[1,1].plot(kx, Values[:,1], '-', linewidth=2, color='C3')
@@ -53,10 +57,33 @@ def plot_kormanyos_fabian_bands(kx, Values):
     plt.show()
     return 0
 
+def plot_simple_4_bands(kx, values):
+    fig, ax = plt.subplots(nrows = 2, figsize = (5,8))
+    ax[0].plot(kx, values[:,2])
+    ax[0].plot(kx, values[:,3])
+    ax[1].plot(kx, values[:,0])
+    ax[1].plot(kx, values[:,1])
+    # ax[0].set_xlim(-2,2)
+    # ax[1].set_xlim(-2,2)
+    # ax[0].set_ylim(-2,2)
+    # ax[1].set_ylim(-2,2)
+    plt.show()
+    return 0
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-m", "--main_file", default="infile.txt",
+                        type=str, help="path for the main input file")
+    args = parser.parse_args()
+    main_input_file = args.main_file
+    return main_input_file
+
 
 def main():
     # READ THE "infile.txt"
-    params = files.read_params("infile.txt")
+    main_file = parse_arguments()
+    params = files.read_params(main_file)
     Ham, r_0, epsilon, exchange, d_chosen, Lk, n_mesh, n_sub, submesh_radius, n_rec_states = files.pop_out_model(params)
     hamiltonian      = Ham(**params)
 
@@ -73,10 +100,12 @@ def main():
         Values[i,:], Vectors[i,:,:] = LA.eigh(hamiltonian.call(kx[i],0))
 
     # REORGANIZE THE VECTORS AND THE VALUES
-    Values_New, Vectors_New = split_states(Values, Vectors)
+    Values, Vectors = split_states(Values, Vectors)
 
     # PLOT THE BANDS
-    plot_kormanyos_fabian_bands(kx, Values_New)
+    # plot_kormanyos_fabian_bands(kx, Values)
+    plot_simple(kx, Values)
+
 
 
 

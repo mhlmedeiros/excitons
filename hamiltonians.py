@@ -91,14 +91,14 @@ fieldsWannier=[
 
 class H_Wannier:
 
-    def __init__(self,m_1,m_2=None):
+    def __init__(self,m_1,m_2=None,Egap=0):
         """
         """
         if m_2 != None: self.m_eff = (m_1*m_2)/(m_1+m_2)
         else: self.m_eff = m_1
         self.condBands = 0
         self.valeBands = 0
-        self.Egap      = 0
+        self.Egap      = Egap
 
     def call(self,kx,ky):
         m_eff = self.m_eff
@@ -108,18 +108,18 @@ class H_Wannier:
 fields2x2 = [
     ('alphac', float32),
     ('alphav', float32),
-    ('gap', float32),
+    ('Egap', float32),
     ('gamma', float32),
-    ('condBands', int32),
     ('valeBands', int32),
+    ('condBands', int32),
 ]
 
 @jitclass(fields2x2)
 class H2x2:
-    def __init__(self, alphac, alphav, gap, gamma):
+    def __init__(self, alphac, alphav, Egap, gamma):
         self.alphac = alphac
         self.alphav = alphav
-        self.gap = gap
+        self.Egap = Egap
         self.gamma = gamma
         self.valeBands = 1
         self.condBands = 1
@@ -134,11 +134,11 @@ class H2x2:
             [-1j,  0]])
         return Pix, Piy
 
-    def H_0():
-        E_gap   = self.gap
+    def H_0(self):
+        E_gap   = self.Egap
         H = np.array([
             [E_gap, 0],
-            [    0, 0]])
+            [    0, 0*E_gap]])
         return H
 
     def H_kp1(self, kx, ky):
@@ -156,15 +156,15 @@ class H2x2:
         return H
 
     def call(self, kx, ky):
-        return self.H_0() + self.H_kp1(kx,ky) + self.H_k2(kx,ky)
+        return self.H_kp1(kx,ky) + self.H_k2(kx,ky) + self.H_0()
 
 #===============================================================================
 
 class H4x4_general:
     """
     The instances of this class cannot be passed to numba-compiled functions.
-    But, since it is a Python class it can be parent of other classes, it
-    includes 'jitclasses'.
+    But, as a Python class it can be parent of other classes, which includes
+    'jitclasses'.
     """
     def __init__(self, alphac_up, alphav_up, gap_up, gamma_up, alphac_down, alphav_down, gap_down, gamma_down):
         ## SPIN-UP:
@@ -319,6 +319,20 @@ class H4x4_Kormanyos_Fabian:
         self.condBands = 2
         self.valeBands = 2
 
+    def basis(self):
+        """
+        This method is only used in the wavefunction analysis. The cluster
+        version of the code doesn't need to have this method.
+        It returns two lists:
+            * the first list contains the conduction basis vectors
+            * the second list has the valence basis vectors
+        """
+        cond_up = np.array([0,0,1,0])
+        cond_dn = np.array([0,0,0,1])
+        vale_up = np.array([1,0,0,0])
+        vale_dn = np.array([0,1,0,0])
+        return [cond_up, cond_dn], [vale_up, vale_dn]
+
     def Pi(self):
         gamma = self.gamma
         valey = self.valey
@@ -378,6 +392,156 @@ class H4x4_Kormanyos_Fabian:
     def call(self, kx,ky):
         return self.H_0() + self.H_SO() + self.H_kp1(kx, ky) + self.H_kp2(kx, ky)
 
+fieldsKormanyosFabianRashba = [
+    ('Egap', float32),
+    ('E_c', float32),
+    ('E_v', float32),
+    ('alpha_up', float32),
+    ('alpha_dn', float32),
+    ('beta_up', float32),
+    ('beta_dn', float32),
+    ('gamma', float32),
+    ('gamma_z', float32),
+    ('delta_c', float32),
+    ('delta_v', float32),
+    ('kappa_up', float32),
+    ('kappa_dn', float32),
+    ('alpha_Rashba_c', float32),
+    ('alpha_Rashba_v', float32),
+    ('valey', int32),
+    ('condBands', int32),
+    ('valeBands', int32),
+]
+
+@jitclass(fieldsKormanyosFabianRashba)
+class H4x4_Kormanyos_Fabian_Rashba:
+    """
+    Version of the Kormanyos Hamiltonian including the Rashba SOC:
+    """
+    def __init__(self, E_c, E_v, alpha_up, alpha_dn, beta_up, beta_dn, gamma, gamma_z, delta_c, delta_v, kappa_up, kappa_dn, alpha_Rashba_c, alpha_Rashba_v, valey):
+        # PARAMS OF THE HAMILTONIAN
+        self.Egap= E_c
+        self.E_c = E_c + np.abs(delta_c)
+        self.E_v = E_v - np.abs(delta_v)
+        self.alpha_up = alpha_up
+        self.alpha_dn = alpha_dn
+        self.beta_up = beta_up
+        self.beta_dn = beta_dn
+        self.gamma = gamma
+        self.gamma_z = gamma_z
+        self.delta_c = delta_c
+        self.delta_v = delta_v
+        self.kappa_up = kappa_up
+        self.kappa_dn = kappa_dn
+        self.alpha_Rashba_c = alpha_Rashba_c
+        self.alpha_Rashba_v = alpha_Rashba_v
+        ## META DATA OF THE HAMILTONIAN:
+        self.valey = valey        # K == 1, K' == -1
+        self.condBands = 2
+        self.valeBands = 2
+
+    def basis(self):
+        """
+        This method is only used in the wavefunction analysis. The cluster
+        version of the code doesn't need to have this method.
+        It returns two lists:
+            * the first list contains the conduction basis vectors
+            * the second list has the valence basis vectors
+        """
+        cond_up = np.array([0,0,1,0])
+        cond_dn = np.array([0,0,0,1])
+        vale_up = np.array([1,0,0,0])
+        vale_dn = np.array([0,1,0,0])
+        return [cond_up, cond_dn], [vale_up, vale_dn]
+
+    def Pi(self):
+        """
+        Differently from the majority of the models implemented here,
+        for this particular case we have implemented the matrix 'Piz'.
+        However, this matrix is NOT supposed to be used in the Hamiltonian
+        definition, instead it is only used to calculate the absorption spectra
+        when the polarization z is required.
+        """
+        gamma = self.gamma
+        gamma_z = self.gamma_z
+        valey = self.valey
+        Pix = (1.+0j) * valey * gamma * np.array([
+        [ 0, 0, 1, 0],
+        [ 0, 0, 0, 1],
+        [ 1, 0, 0, 0],
+        [ 0, 1, 0, 0]])
+        Piy = gamma * np.array([
+        [  0,  0,-1j,  0],
+        [  0,  0,  0,-1j],
+        [+1j,  0,  0,  0],
+        [  0,+1j,  0,  0]])
+        Piz = (1.+0j) * gamma_z * np.array([
+        [ 0, 0, 0, 1],
+        [ 0, 0, 1, 0],
+        [ 0, 1, 0, 0],
+        [ 1, 0, 0, 0]])
+        return Pix, Piy #, Piz
+
+    def H_0(self):
+        E_v, E_c = self.E_v, self.E_c
+        H0 = np.array([
+        [E_v, 0, 0, 0],
+        [0, E_v, 0, 0],
+        [0, 0, E_c, 0],
+        [0, 0, 0, E_c]])
+        return H0
+
+    def H_SO(self):
+        d_v, d_c = self.delta_v, self.delta_c
+        HSO = np.array([
+        [d_v, 0, 0, 0],
+        [0,-d_v, 0, 0],
+        [0, 0, d_c, 0],
+        [0, 0, 0,-d_c]])
+        return self.valey * HSO
+
+    def H_kp1(self, kx, ky):
+        # Pix, Piy,_ = self.Pi()
+        Pix, Piy = self.Pi()
+        return kx*Pix + ky*Piy
+
+    def H_kp2(self, kx, ky):
+        k2  = kx**2 + ky**2
+        k_p = kx + self.valey * 1j * ky
+        k_m = kx - self.valey * 1j * ky
+        if self.valey == 1:
+            a1, a2 = self.alpha_up, self.alpha_dn
+            b1, b2 = self.beta_up, self.beta_dn
+            kau, kad = self.kappa_up, self.kappa_dn
+        else:
+            a1, a2 = self.alpha_dn, self.alpha_up
+            b1, b2 = self.beta_dn, self.beta_up
+            kau, kad = self.kappa_dn, self.kappa_up
+        Hkp2 = np.array([
+            [a1*k2     ,         0,kau*k_p**2,         0],
+            [         0,     a2*k2,         0,kad*k_p**2],
+            [kau*k_m**2,         0,     b1*k2,         0],
+            [         0,kad*k_m**2,         0,     b2*k2]
+        ])
+        return Hkp2
+
+    def H_Rashba(self, kx, ky):
+        a_C = self.alpha_Rashba_c
+        a_V = self.alpha_Rashba_v
+        k_p = kx + 1j * ky
+        k_m = kx - 1j * ky
+        H_R = 1j * np.array([
+            [       0,-a_V*k_m,       0,       0],
+            [ a_V*k_p,       0,       0,       0],
+            [       0,       0,       0,-a_C*k_m],
+            [       0,       0, a_C*k_p,       0]
+        ])
+        return H_R
+
+    def call(self, kx,ky):
+        return self.H_0() + self.H_SO() + self.H_kp1(kx, ky) + self.H_kp2(kx, ky) + self.H_Rashba(kx, ky)
+
+
 
 #===============================================================================
 fields3Bands = [
@@ -391,6 +555,8 @@ fields3Bands = [
     ('P10', float32),
     ('P20', float32),
     ('P21', float32),
+    ('P20_sign', int32),
+    ('P21_sign', int32),
     ('condBands', int32),
     ('valeBands', int32),
 ]
@@ -398,8 +564,10 @@ fields3Bands = [
 @jitclass(fields3Bands)
 class H3x3:
     """
+    3-Bands model adopted to investigate the influence of the conduction-band
+    couplings in the excitons absorption spectra.
     """
-    def __init__(self, E0, E1, E2, m0, m1, m2, P10, P20, P21):
+    def __init__(self, E0, E1, E2, m0, m1, m2, P10, P20, P21, P20_sign, P21_sign):
         # PARAMS OF THE HAMILTONIAN
         self.E0 = E0
         self.E1 = E1
@@ -410,21 +578,63 @@ class H3x3:
         self.P10 = P10
         self.P20 = P20
         self.P21 = P21
+        self.P20_sign = P20_sign  # {+1,-1}
+        self.P21_sign = P21_sign  # {+1,-1}
         self.Egap = min((E1-E0), (E2-E0))
         ## META DATA OF THE HAMILTONIAN:
         self.condBands = 2
         self.valeBands = 1
 
+    def basis(self):
+        """
+        This method is only used in the wavefunction analysis. The cluster
+        version of the code doesn't need to have this method.
+        It returns two lists:
+            * the first list contains the conduction basis vectors
+            * the second list has the valence basis vectors
+        """
+        cond_0 = np.array([1,0,0])
+        cond_1 = np.array([0,1,0])
+        vale   = np.array([0,0,1])
+        return [cond_0, cond_1], [vale]
+
     def Pi(self):
-        P10, P20 = self.P10, self.P20
-        Pix = (1.+0j) * np.array([
-        [   0,   0, P20],
-        [   0,   0, P10],
+        """
+        Notice that this is the important Pi-operator with which
+        one can calculate the absorption. This method is also adopted
+        inside this class by being called by self.H_k1(), which by its
+        turn is called by self.call().
+
+        The operators Pix and Piy have to be Hemitian, and
+        Pix * k_x + Piy * k_y = [[           0, P21*k_(+/-), P20*k_(+/-)],
+                                 [ P21*k_(-/+),           0,   P10*k_(+)],
+                                 [ P20*k_(-/+),   P10*k_(-),           0]]
+        """
+        P10 = self.P10
+        P20 = self.P20
+        P21 = self.P21
+
+        s0 = self.P20_sign
+        s1 = self.P21_sign
+
+        ## k_x COEFICIENTS:
+        ## ALL POSITIVE, AND REAL
+        ## DO NOT DEPEND ON 'CHIRALITY'
+        ## PARAMETERS.
+        Pix = (1.+ 0j) * np.array([
+        [   0, P21, P20],
+        [ P21,   0, P10],
         [ P20, P10,   0]])
+
+        ## k_y COEFICIENTS: ALL IMAGINARY
+        ## HERE THE SIGN WILL DEPEND ON
+        ## ATTRIBUTES THAT CHANGE 'CHIRALITY':
+        ## 'self.P20_sign', and 'self.P21_sign'.
         Piy = 1j * np.array([
-        [   0,   0,-P20],
-        [   0,   0,+P10],
-        [+P20,-P10,   0]])
+        [      0, s1*P21,  s0*P20],
+        [-s1*P21,      0,     P10],
+        [-s0*P20,   -P10,       0]])
+
         return Pix, Piy
 
     def H_0(self):
@@ -435,19 +645,9 @@ class H3x3:
         [0, 0, E0]])
         return H0
 
-    def H_cc(self):
-        P21 = self.P21
-        Hcc = np.array([
-        [  0, P21, 0],
-        [P21,   0, 0],
-        [  0,   0, 0*P21]]) # it makes no sense but without this it doesn't work
-        return Hcc
-
     def H_k1(self, kx, ky):
-        kplus = (kx + 1j*ky)
         Pix, Piy = self.Pi()
-        Hcc = self.H_cc()
-        return kx*Pix + ky*Piy + kplus*Hcc
+        return kx*Pix + ky*Piy
 
     def H_k2(self, kx, ky):
         k2  = kx**2 + ky**2
@@ -584,111 +784,14 @@ def main():
         P10 = 2.0,
         P20 = 0.5,
         P21 = 0.5,
+        P20_sign = +1,
+        P21_sign = +1,
     )
     H = H3x3(**params_test)
     print(H.call(0,0))
 
+    print(H.basis())
+
 
 if __name__=='__main__':
     main()
-
-
-
-# @njit
-# def potential_average(V, k_vec_diff, N_submesh, submesh_radius):
-#     """
-#     As we've been using a square lattice, we can use
-#     * w_x_array == w_y_array -> w_array
-#     * with limits:  -dw/2, +dw/2
-#     * where: dw = sqrt(dk2)
-#     """
-#     k_diff_norm = np.sqrt(k_vec_diff[0]**2 + k_vec_diff[1]**2)
-#     dk = np.sqrt(V.dk2)
-#     threshold = submesh_radius * dk
-#
-#     # print('threshold: ', threshold)
-#     # print('k_diff: ', k_diff_norm)
-#
-#     if N_submesh==None or k_diff_norm > threshold:
-#         Potential_value = V.call(k_diff_norm)
-#     else:
-#         # THIS BLOCK WILL RUN ONLY IF "k_diff_norm" IS EQUAL OR SMALLER
-#         # THAN A LIMIT, DENOTED HERE BY "threshold":
-#         w_array = np.linspace(-dk/2, dk/2, N_submesh)
-#         Potential_value = 0
-#         number_of_sing_points = 0
-#         for wx in w_array:
-#             for wy in w_array:
-#                 w_vec = np.array([wx, wy])
-#                 q_vec = k_vec_diff + w_vec
-#                 q = np.linalg.norm(q_vec)
-#                 if q == 0: number_of_sing_points += 1; continue; # skip singularities
-#                 Potential_value += V.call(q)
-#         if number_of_sing_points != 0 :
-#             print("\t\t\tFor k-k' = ", k_vec_diff ," the number of singular points was ", number_of_sing_points)
-#         Potential_value = Potential_value/(N_submesh**2 - number_of_sing_points)
-#     return Potential_value
-#
-# @njit
-# def smart_potential_matrix(V, kx_flat, ky_flat, N_submesh, submesh_radius):
-#     """
-#     CONSIDERING A SQUARE K-SPACE GRID:
-#
-#     This function explore the regularity in the meshgrid that defines the k-space
-#     to build the potential-matrix [V(k-k')].
-#
-#     Note that it is exclusive for the Rytova-Keldysh potential.
-#
-#     # TODO: to make this function more general in the sense that any other potential
-#     function could be adopted: Define a Potential-class and  pass instances of such
-#     class instead of pass attributes of Rytova-Keldysh potential.
-#
-#     """
-#     n_all_k_space = len(kx_flat)
-#     n_first_row_k = int(np.sqrt(n_all_k_space)) # number of points in the first row of the grid
-#     M_first_rows = np.zeros((n_first_row_k, n_all_k_space))
-#     M_complete = np.zeros((n_all_k_space, n_all_k_space))
-#     print("\t\tCalculating the first rows (it may take a while)...")
-#     for k1_ind in range(n_first_row_k):
-#         for k2_ind in range(k1_ind+1, n_all_k_space):
-#             k1_vec = np.array([kx_flat[k1_ind], ky_flat[k1_ind]])
-#             k2_vec = np.array([kx_flat[k2_ind], ky_flat[k2_ind]])
-#             k_diff = k1_vec - k2_vec
-#             M_first_rows[k1_ind, k2_ind] = potential_average(V, k_diff, N_submesh, submesh_radius)
-#
-#     print("\t\tOrganizing the the calculated values...")
-#     M_complete[:n_first_row_k,:] = M_first_rows
-#     for row in range(1, n_first_row_k):
-#         ni, nf = row * n_first_row_k, (row+1) * n_first_row_k
-#         mi, mf = ni, -ni
-#         M_complete[ni:nf, mi:] = M_first_rows[:, :mf]
-#
-#     M_complete += M_complete.T
-#     # plt.imshow(M_complete)
-#     return M_complete
-#
-#
-# def potential_matrix(V, kx_matrix, ky_matrix, N_submesh, submesh_radius=0):
-#     """
-#     This function generates a square matrix that contains the values of
-#     the potential for each pair of vectors k & k'.
-#
-#     Dimensions = Nk x Nk
-#     where Nk = (Nk_x * Nk_y)
-#     """
-#     kx_flat = kx_matrix.flatten()
-#     ky_flat = ky_matrix.flatten()
-#
-#     # OUT OF DIAGONAL: SMART SCHEME
-#     # N_submesh_off = N_submesh if submesh_off_diag == True else None
-#     V_main = smart_potential_matrix(V, kx_flat, ky_flat, N_submesh, submesh_radius)
-#
-#     # DIAGONAL VALUE: EQUAL FOR EVERY POINT (WHEN USING SUBMESH)
-#     if N_submesh != None:
-#         print("\t\tCalculating the potential around zero...")
-#         k_0 = np.array([0,0])
-#         V_0 = potential_average(V, k_0, N_submesh, submesh_radius)
-#         np.fill_diagonal(V_main, V_0) # PUT ALL TOGETHER
-#
-#     return V_main
-#

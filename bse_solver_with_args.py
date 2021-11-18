@@ -57,28 +57,34 @@ def diagonalize_bse(BSE_MATRIX, n_states, arpack=False):
     return values, vectors
 
 # ========================================================================= #
+##                            PARSING THE INPUTS
+# ========================================================================= #
+def parse_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input_file", help="Path for the input file")
+    parser.add_argument("output_file", help='First part of the output file name')
+    parser.add_argument("-e", "--epsilon", default=1.0, type=float, help="Dielectric constant")
+    parser.add_argument("-ns", "--not_save", action="store_false", help="Tell to not save the bse solutions")
+    parser.add_argument("-p", "--preview", action="store_true", help="Show the first bse eigenvals")
+    args = parser.parse_args()
+    input_file  = args.input_file
+    output_file = args.output_file
+    epsilon = args.epsilon
+    save = not args.not_save
+    preview = args.preview
+    return input_file, output_file, epsilon, save, preview
+
+# ========================================================================= #
 ##                            MAIN FUNCTION
 # ========================================================================= #
 def main():
-    # print('\n**************************************************')
-    # print("                      BSE-SOLVER                  ")
-    # print('**************************************************\n')
+    # =============================== #
+    ##     READING ARGUMENTS:
+    # =============================== #
+    input_file, output_file, epsilon, save, preview = parse_arguments()
+    params_master = files.read_params(input_file)
+    params = files.read_params(input_file)
 
-    # =============================== #
-    ##          Outuput options:
-    # =============================== #
-    save = False
-    preview = True
-
-    # =============================== #
-    ##     READING THE INPUT FILE:
-    # =============================== #
-    # output_name = 'results_bse'
-    # if files.verify_output(output_name) == 'N': return 0
-    main_input_file = 'infile.txt'
-    # files.verify_file_or_template(main_input_file)
-    # params = files.read_file(main_input_file)
-    params = files.read_params(main_input_file)
 
     # =============================== #
     ##  TERMINAL OPTIONS (OVERRIDE):
@@ -106,7 +112,9 @@ def main():
     # =============================== #
     ##      POP THE PARAMS OUT:
     # =============================== #
-    Ham, r_0, epsilon, exchange, d_chosen, L_k, n_mesh, n_sub, submesh_radius, n_rec_states = files.pop_out_model(params)
+    # SINCE WE'RE VARING THE epsilon VALUES IN THIS CODE, WE WILL DISCARD THE
+    # VALUE GIVEN IN THE INPUT FILE AND ADOPT THAT ONE FROM PARSER
+    Ham, r_0, epsilon_file, exchange, d_chosen, L_k, n_mesh, n_sub, submesh_radius, n_rec_states = files.pop_out_model(params)
 
     # =============================== #
     ##    DEFINE THE K-SPACE GRID:
@@ -124,9 +132,6 @@ def main():
     # =============================== #
     #       BUILD THE MATRIX:
     # =============================== #
-    # print('Exchange: ', exchange)
-    # answer = (input("The value for 'exchange' is {}; do you want to proceed? (y/N)\n".format(exchange)) or 'N').upper()
-    # if answer == 'N': return 0
     if hamiltonian.condBands != 0:
         MAIN_MATRIX = build_bse_matrix(hamiltonian, potential_obj, exchange, r_0, d_chosen, grid, n_sub, submesh_radius)
     else:
@@ -146,6 +151,7 @@ def main():
     # =============================== #
     #       SAVING THE RESULTS:
     # =============================== #
+    output_name = output_file + "_eps_{}".format(epsilon)
     data_dic_to_save = dict(eigvals_holder=eigvals_holder, eigvecs_holder=eigvecs_holder)
     if save: files.output_file(output_name, data_dic_to_save)
 

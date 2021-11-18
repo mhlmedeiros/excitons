@@ -1,0 +1,34 @@
+## MODEL HAMILTONIAN:
+
+Ham      = H3x3          # DON'T CHANGE
+E0       = 0.0           # float : H_0  [meV]
+E1       = 2.4e3         # float : H_0  [meV]
+E2       = 2.5e3         # float : H_0  [meV]
+m0       = -0.6          # float : H_k2 [m_e]
+m1       = 0.4           # float : H_k2 [m_e]
+m2       = 0.6           # float : H_k2 [m_e]
+P10      = 2.0e2         # float : H_k1 [meV nm]
+P20      = 0.5e2         # float : H_k1 [meV nm]
+P21      = 0.5e2         # float : H_k1 [meV nm]
+P20_sign = +1            # int : {+1,-1} H_k1
+P21_sign = -1            # int : {+1,-1} H_k1
+epsilon  = 1             # float : effective dielectric constant
+r0       = 45.1e-1       # float : [nm]
+
+## BSE EXCHANGE:
+
+exchange  = 1           # int   : 0 = False, 1 = True
+d_chosen  = 0.6         # float : Chose a value in the interval [0.6, 0.65] nm
+
+
+## K-SPACE:
+
+L_k             = 5         # int : the discretized k-space limits: k_x(y) ∈ [-L,L]
+n_mesh          = 101       # int : quantity of points in each direction
+n_sub           = 101       # int : quantity of points in each of the submesh direction
+submesh_radius  = 1         # int : in number of sites; radius of the region where the submesh will be considered
+
+
+## SAVING OPTIONS:
+
+n_rec_states    = 1000      # int : Number of states to be recorded

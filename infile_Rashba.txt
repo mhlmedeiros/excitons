@@ -1,0 +1,38 @@
+## MODEL HAMILTONIAN:
+
+Ham         = H4x4_Kormanyos_Fabian_Rashba  # Hamiltonian class
+E_c         = 2.8e3                         # float : H_0   [meV]
+E_v         = 0.0                           # float : H_0   [meV]
+alpha_up    = -2.40e1                       # float : H_2kp [meV nm²]
+alpha_dn    = -2.84e1                       # float : H_2kp [meV nm²]
+beta_up     = 4.57e1                        # float : H_2kp [meV nm²]
+beta_dn     = 4.33e1                        # float : H_2kp [meV nm²]
+gamma       = 2.22e2                        # float : H_1kp [meV nm]
+gamma_z     = 1.0                           # float : Pi_z  [meV nm] (absorption)
+delta_c     = -0.0015e3                     # float : H_SO  [meV]
+delta_v     = 0.0740e3                      # float : H_SO  [meV]
+kappa_up    = -1.84e1                       # float : H_2kp [meV nm²]
+kappa_dn    = -1.80e1                       # float : H_2kp [meV nm²]
+alpha_Rashba_c = 0                          # float : H_Rashba [meV nm]
+alpha_Rashba_v = 0                          # float : H_Rashba [meV nm]
+valey       = 1                             # int   : 1 == K-point; -1 == K'-point
+epsilon     = 1                             # float : effective dielectric constant
+r0          = 45.1e-1                       # float : [nm]
+
+## BSE EXCHANGE:
+
+exchange      = 1                       # int   : 0 = False, 1 = True
+d_chosen      = 0.6                     # float : Chose a value in the interval [0.6, 0.65] nm
+
+
+## K-SPACE:
+
+L_k             = 5                     # int : the discretized k-space limits: k_x(y) ∈ [-L,L]
+n_mesh          = 101                   # int : quantity of points in each direction
+n_sub           = 101                   # int : quantity of points in each of the submesh direction
+submesh_radius  = 1                     # int : in number of sites; radius of the region where the submesh will be considered
+
+
+## SAVING OPTIONS:
+
+n_rec_states    = 1000                  # int : Number of states to be recorded

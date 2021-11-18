@@ -1,0 +1,35 @@
+## MODEL HAMILTONIAN:
+
+Ham         = H4x4_Kormanyos_Fabian     # DON'T CHANGE
+E_c         = 2.42e3                    # float : H_0   [meV]
+E_v         = 0.0                       # float : H_0   [meV]
+alpha_up    = 0                         # float : H_2kp [meV nm²]
+alpha_dn    = 0                         # float : H_2kp [meV nm²]
+beta_up     = 0                         # float : H_2kp [meV nm²]
+beta_dn     = 0                         # float : H_2kp [meV nm²]
+gamma       = 2.60e2                    # float : H_1kp [meV nm]
+delta_c     = 0.0185e3                  # float : H_SO  [meV]
+delta_v     = 0.2310e3                  # float : H_SO  [meV]
+kappa_up    = 0                         # float : H_2kp [meV nm²]
+kappa_dn    = 0                         # float : H_2kp [meV nm²]
+valey       = 1                         # int   : 1 == K-point; -1 == K'-point
+epsilon     = 1                         # float : effective dielectric constant
+r0          = 45.1e-1                   # float : [nm]
+
+## BSE EXCHANGE:
+
+exchange      = 1                       # int   : 0 = False, 1 = True
+d_chosen      = 0.6                     # float : Chose a value in the interval [0.6, 0.65] nm
+
+
+## K-SPACE:
+
+L_k             = 5                     # int : the discretized k-space limits: k_x(y) ∈ [-L,L]
+n_mesh          = 101                   # int : quantity of points in each direction
+n_sub           = 101                   # int : quantity of points in each of the submesh direction
+submesh_radius  = 1                     # int : in number of sites; radius of the region where the submesh will be considered
+
+
+## SAVING OPTIONS:
+
+n_rec_states    = 1000                  # int : Number of states to be recorded
