@@ -1,6 +1,5 @@
 *.pyc
 *.so
 *.npz
-*.png
 .vscode/
 .ipynb_checkpoints/
